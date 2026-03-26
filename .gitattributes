@@ -1,0 +1,2 @@
+src/3rdparty/sqlite/*.c -text
+src/3rdparty/sqlite/*.h -text

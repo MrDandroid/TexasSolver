@@ -106,6 +106,7 @@ SOURCES += \
     src/solver/BestResponse.cpp \
     src/solver/CfrSolver.cpp \
     src/solver/PCfrSolver.cpp \
+    src/solver/Solver.cpp \
     src/solver/pcfrsolver_dump_sqlite.cpp \
     src/solver/pcfrsolver_dump_stream.cpp \
     src/tools/CommandLineTool.cpp \

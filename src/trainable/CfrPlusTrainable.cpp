@@ -47,20 +47,31 @@ const vector<float> CfrPlusTrainable::getAverageStrategy() {
         }
     }
     */
-    return this->getcurrentStrategy();
+    fillAverageStrategy(retval);
+    return retval;
 }
 
 const vector<float> CfrPlusTrainable::getcurrentStrategy() {
+    fillCurrentStrategy(retval);
+    return retval;
+}
+
+void CfrPlusTrainable::fillAverageStrategy(vector<float>& strategy) {
+    fillCurrentStrategy(strategy);
+}
+
+void CfrPlusTrainable::fillCurrentStrategy(vector<float>& strategy) {
+    strategy.resize(this->action_number * this->card_number);
     if(this->r_plus_sum.empty()){
-        fill(retval.begin(),retval.end(),1.0 / this->action_number);
+        fill(strategy.begin(),strategy.end(),1.0 / this->action_number);
     }else {
         for (int action_id = 0; action_id < action_number; action_id++) {
             for (int private_id = 0; private_id < this->card_number; private_id++) {
                 int index = action_id * this->card_number + private_id;
                 if(this->r_plus_sum[private_id] != 0) {
-                    retval[index] = this->r_plus[index] / this->r_plus_sum[private_id];
+                    strategy[index] = this->r_plus[index] / this->r_plus_sum[private_id];
                 }else{
-                    retval[index] = 1.0 / this->action_number;
+                    strategy[index] = 1.0 / this->action_number;
                 }
                 if(this->r_plus[index] != this->r_plus[index]) throw runtime_error("nan found");
                 /*
@@ -82,7 +93,6 @@ const vector<float> CfrPlusTrainable::getcurrentStrategy() {
             }
         }
     }
-    return retval;
 }
 
 void CfrPlusTrainable::updateRegrets(const vector<float>& regrets, int iteration_number, const vector<float>& reach_probs) {

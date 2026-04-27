@@ -23,7 +23,12 @@ bool DiscountedCfrTrainableSF::isAllZeros(const vector<float>& input_array) {
 
 const vector<float> DiscountedCfrTrainableSF::getAverageStrategy() {
     vector<float> average_strategy;
-    average_strategy = vector<float>(this->action_number * this->card_number);
+    fillAverageStrategy(average_strategy);
+    return average_strategy;
+}
+
+void DiscountedCfrTrainableSF::fillAverageStrategy(vector<float>& average_strategy) {
+    average_strategy.resize(this->action_number * this->card_number);
     for (int private_id = 0; private_id < this->card_number; private_id++) {
         float r_plus_sum = 0;
         for (int action_id = 0; action_id < action_number; action_id++) {
@@ -40,11 +45,12 @@ const vector<float> DiscountedCfrTrainableSF::getAverageStrategy() {
             }
         }
     }
-    return average_strategy;
 }
 
 const vector<float> DiscountedCfrTrainableSF::getcurrentStrategy() {
-    return this->getcurrentStrategyNoCache();
+    vector<float> current_strategy;
+    fillCurrentStrategy(current_strategy);
+    return current_strategy;
 }
 
 void DiscountedCfrTrainableSF::copyStrategy(shared_ptr<Trainable> other_trainable){
@@ -55,7 +61,12 @@ void DiscountedCfrTrainableSF::copyStrategy(shared_ptr<Trainable> other_trainabl
 
 const vector<float> DiscountedCfrTrainableSF::getcurrentStrategyNoCache() {
     vector<float> current_strategy;
-    current_strategy = vector<float>(this->action_number * this->card_number);
+    fillCurrentStrategy(current_strategy);
+    return current_strategy;
+}
+
+void DiscountedCfrTrainableSF::fillCurrentStrategy(vector<float>& current_strategy) {
+    current_strategy.resize(this->action_number * this->card_number);
     // calculate r_plus_sum on the fly, store r_plus as floats locally
     vector<float> r_plus_sum = vector<float>(this->r_plus.size());
     fill(r_plus_sum.begin(),r_plus_sum.end(),0);
@@ -79,7 +90,6 @@ const vector<float> DiscountedCfrTrainableSF::getcurrentStrategyNoCache() {
 #endif
         }
     }
-    return current_strategy;
 }
 
 void DiscountedCfrTrainableSF::setEv(const vector<float>& evs){

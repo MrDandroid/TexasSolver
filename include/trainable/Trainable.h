@@ -17,6 +17,8 @@ public:
     };
     virtual const vector<float> getAverageStrategy() = 0;
     virtual const vector<float> getcurrentStrategy() = 0;
+    virtual void fillAverageStrategy(vector<float>& strategy) = 0;
+    virtual void fillCurrentStrategy(vector<float>& strategy) = 0;
     virtual void updateRegrets(const vector<float>& regrets,int iteration_number,const vector<float>& reach_probs) = 0;
     virtual void setEv(const vector<float>& evs) = 0;
     virtual void copyStrategy(shared_ptr<Trainable> other_trainable) = 0;

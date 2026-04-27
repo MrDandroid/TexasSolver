@@ -263,7 +263,8 @@ BestResponse::actionBestResponse(shared_ptr<ActionNode> node, int player, const 
             throw runtime_error("null trainable");
         }
 #endif
-        const vector<float>& node_strategy = trainable->getAverageStrategy();
+        vector<float> node_strategy;
+        trainable->fillAverageStrategy(node_strategy);
 #ifdef DEBUG
         if(node_strategy.size() != node->getChildrens().size() * reach_probs[node->getPlayer()].size()) {
             throw runtime_error(tfm::format("strategy size not match %s - %s",
@@ -461,4 +462,3 @@ BestResponse::showdownBestResponse(shared_ptr<ShowdownNode> node, int player,con
     }
     return payoffs;
 }
-

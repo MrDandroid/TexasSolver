@@ -36,6 +36,10 @@ public:
 
     const vector<float> getcurrentStrategy() override;
 
+    void fillAverageStrategy(vector<float>& strategy) override;
+
+    void fillCurrentStrategy(vector<float>& strategy) override;
+
     void updateRegrets(const vector<float>& regrets, int iteration_number, const vector<float>& reach_probs) override;
 
     void setEv(const vector<float>& evs) override;

@@ -3,6 +3,7 @@
 #include "include/nodes/ActionNode.h"
 #include "include/nodes/ChanceNode.h"
 #include "include/nodes/GameActions.h"
+#include "include/tools/HotspotProfiler.h"
 #include "include/tools/utils.h"   // exchange_color
 
 #include <fstream>
@@ -226,6 +227,7 @@ static inline std::array<uint8_t,4> suit_signature(const std::vector<std::pair<i
 }
 
 void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::ExportTsb2);
     if (!this->tree) throw std::runtime_error("tree is null");
     auto root = this->tree->getRoot();
     if (!root) throw std::runtime_error("tree root is null");
@@ -259,29 +261,32 @@ void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) 
     add_node(root);
     q.push(root);
 
-    while (!q.empty()) {
-        auto n = q.front(); q.pop();
-        if (!n) continue;
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::ExportTsb2CollectNodes);
+        while (!q.empty()) {
+            auto n = q.front(); q.pop();
+            if (!n) continue;
 
-        // depth limiter (optional): if max_depth>0, stop expanding deeper action branches
-        if (max_depth > 0 && (int)n->depth >= max_depth) continue;
+            // depth limiter (optional): if max_depth>0, stop expanding deeper action branches
+            if (max_depth > 0 && (int)n->depth >= max_depth) continue;
 
 
-        switch (n->getType()) {
-        case GameTreeNode::ACTION: {
-            auto an = std::static_pointer_cast<ActionNode>(n);
-            auto& chs = an->getChildrens();
-            for (auto& c : chs) { add_node(c); q.push(c); }
-        } break;
-        case GameTreeNode::CHANCE: {
-            auto cn = std::static_pointer_cast<ChanceNode>(n);
-            auto c = cn->getChildren();
-            if (c) { add_node(c); q.push(c); }
-        } break;
-        case GameTreeNode::SHOWDOWN:
-        case GameTreeNode::TERMINAL:
-        default:
-            break;
+            switch (n->getType()) {
+            case GameTreeNode::ACTION: {
+                auto an = std::static_pointer_cast<ActionNode>(n);
+                auto& chs = an->getChildrens();
+                for (auto& c : chs) { add_node(c); q.push(c); }
+            } break;
+            case GameTreeNode::CHANCE: {
+                auto cn = std::static_pointer_cast<ChanceNode>(n);
+                auto c = cn->getChildren();
+                if (c) { add_node(c); q.push(c); }
+            } break;
+            case GameTreeNode::SHOWDOWN:
+            case GameTreeNode::TERMINAL:
+            default:
+                break;
+            }
         }
     }
 
@@ -311,47 +316,50 @@ void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) 
     std::vector<uint32_t> labels_blob;   labels_blob.reserve(8192);
     std::vector<uint32_t> children_blob; children_blob.reserve(8192);
 
-    for (uint32_t nid = 0; nid < N; ++nid) {
-        auto n = nodes[nid];
-        node_type[nid]  = (uint8_t)n->getType();
-        node_round[nid] = (uint8_t)GameTreeNode::gameRound2int(n->getRound());
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::ExportTsb2BuildMeta);
+        for (uint32_t nid = 0; nid < N; ++nid) {
+            auto n = nodes[nid];
+            node_type[nid]  = (uint8_t)n->getType();
+            node_round[nid] = (uint8_t)GameTreeNode::gameRound2int(n->getRound());
 
-        if (n->getType() == GameTreeNode::ACTION) {
-            auto an = std::static_pointer_cast<ActionNode>(n);
-            node_player[nid] = (int8_t)an->getPlayer();
+            if (n->getType() == GameTreeNode::ACTION) {
+                auto an = std::static_pointer_cast<ActionNode>(n);
+                node_player[nid] = (int8_t)an->getPlayer();
 
-            auto& acts = an->getActions();
-            auto& chs  = an->getChildrens();
-            uint16_t A = (uint16_t)acts.size();
+                auto& acts = an->getActions();
+                auto& chs  = an->getChildrens();
+                uint16_t A = (uint16_t)acts.size();
 
-            node_deg[nid]     = A;
-            node_lab_off[nid] = (uint32_t)labels_blob.size();
-            node_chi_off[nid] = (uint32_t)children_blob.size();
+                node_deg[nid]     = A;
+                node_lab_off[nid] = (uint32_t)labels_blob.size();
+                node_chi_off[nid] = (uint32_t)children_blob.size();
 
-            for (size_t i = 0; i < acts.size(); ++i) {
-                uint32_t aid = get_action_id(acts[i].toString());
-                labels_blob.push_back(aid);
+                for (size_t i = 0; i < acts.size(); ++i) {
+                    uint32_t aid = get_action_id(acts[i].toString());
+                    labels_blob.push_back(aid);
+                }
+                for (size_t i = 0; i < chs.size(); ++i) {
+                    uint32_t cid = id[chs[i].get()];
+                    children_blob.push_back(cid);
+                }
+            } else if (n->getType() == GameTreeNode::CHANCE) {
+                auto cn = std::static_pointer_cast<ChanceNode>(n);
+                node_player[nid] = (int8_t)cn->getPlayer();
+                auto c = cn->getChildren();
+                node_deg[nid]     = (c ? 1 : 0);
+                node_lab_off[nid] = (uint32_t)labels_blob.size();
+                node_chi_off[nid] = (uint32_t)children_blob.size();
+                if (c) {
+                    labels_blob.push_back(0); // unused
+                    children_blob.push_back(id[c.get()]);
+                }
+            } else {
+                node_player[nid] = -1;
+                node_deg[nid] = 0;
+                node_lab_off[nid] = (uint32_t)labels_blob.size();
+                node_chi_off[nid] = (uint32_t)children_blob.size();
             }
-            for (size_t i = 0; i < chs.size(); ++i) {
-                uint32_t cid = id[chs[i].get()];
-                children_blob.push_back(cid);
-            }
-        } else if (n->getType() == GameTreeNode::CHANCE) {
-            auto cn = std::static_pointer_cast<ChanceNode>(n);
-            node_player[nid] = (int8_t)cn->getPlayer();
-            auto c = cn->getChildren();
-            node_deg[nid]     = (c ? 1 : 0);
-            node_lab_off[nid] = (uint32_t)labels_blob.size();
-            node_chi_off[nid] = (uint32_t)children_blob.size();
-            if (c) {
-                labels_blob.push_back(0); // unused
-                children_blob.push_back(id[c.get()]);
-            }
-        } else {
-            node_player[nid] = -1;
-            node_deg[nid] = 0;
-            node_lab_off[nid] = (uint32_t)labels_blob.size();
-            node_chi_off[nid] = (uint32_t)children_blob.size();
         }
     }
 
@@ -450,18 +458,20 @@ void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) 
 
     std::vector<std::pair<int,int>> exch_pairs;
 
-    for (uint32_t nid = 0; nid < N; ++nid) {
-        if (node_type[nid] != (uint8_t)GameTreeNode::ACTION) continue;
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::ExportTsb2EmitStrategies);
+        for (uint32_t nid = 0; nid < N; ++nid) {
+            if (node_type[nid] != (uint8_t)GameTreeNode::ACTION) continue;
 
-        auto an = std::static_pointer_cast<ActionNode>(nodes[nid]);
-        const int player = (int)an->getPlayer();
-        const int H = (int)this->ranges[player].size();
-        const int A = (int)an->getActions().size();
-        if (A <= 0 || H <= 0) continue;
+            auto an = std::static_pointer_cast<ActionNode>(nodes[nid]);
+            const int player = (int)an->getPlayer();
+            const int H = (int)this->ranges[player].size();
+            const int A = (int)an->getActions().size();
+            if (A <= 0 || H <= 0) continue;
 
-        int gr = (int)node_round[nid];
+            int gr = (int)node_round[nid];
 
-        auto emit_one = [&](int deal_actual) {
+            auto emit_one = [&](int deal_actual) {
             // skip impossible combos quickly
             if (deal_actual == 0) {
                 // ok
@@ -495,7 +505,8 @@ void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) 
                 if (!tr) return;
 
                 // strategy float: size A*H (row-major by action then hand)
-                auto strat = tr->getAverageStrategy();
+                std::vector<float> strat;
+                tr->fillAverageStrategy(strat);
                 if ((int)strat.size() != A*H) return;
 
                 std::vector<uint16_t> qbuf((size_t)A*(size_t)H);
@@ -520,16 +531,17 @@ void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) 
 
             uint64_t key = (uint64_t(nid) << 32) | (uint32_t)deal_actual;
             idx.push_back({key, off, bytes, hid});
-        };
+            };
 
-        if (gr <= 1) { // preflop/flop
-            emit_one(0);
-        } else if (gr == 2) { // turn: 1..D
-            for (int t=0; t<52; ++t) emit_one(make_deal_turn(t, D));
-        } else { // river: all (turn,river)
-            for (int t=0; t<52; ++t) {
-                for (int r=0; r<52; ++r) {
-                    emit_one(make_deal_river(t, r, D));
+            if (gr <= 1) { // preflop/flop
+                emit_one(0);
+            } else if (gr == 2) { // turn: 1..D
+                for (int t=0; t<52; ++t) emit_one(make_deal_turn(t, D));
+            } else { // river: all (turn,river)
+                for (int t=0; t<52; ++t) {
+                    for (int r=0; r<52; ++r) {
+                        emit_one(make_deal_river(t, r, D));
+                    }
                 }
             }
         }
@@ -538,42 +550,45 @@ void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) 
     fb.flush();
     fb.close();
 
-    // sort index by key
-    std::sort(idx.begin(), idx.end(), [](const IdxEnt& a, const IdxEnt& b){ return a.key < b.key; });
-
-    // write .tsx (TSX2 with hid)
     {
-        std::ofstream fx(tsx_path, std::ios::binary);
-        if (!fx) throw std::runtime_error("open .tsx failed");
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::ExportTsb2WriteIndexMeta);
 
-        char magic[4] = {'T','S','X','2'};
-        fx.write(magic, 4);
-        uint32_t ver = 2;
-        uint32_t reserved = 0;
-        write_pod(fx, ver);
-        write_pod(fx, reserved);
+        // sort index by key
+        std::sort(idx.begin(), idx.end(), [](const IdxEnt& a, const IdxEnt& b){ return a.key < b.key; });
 
-        uint64_t M = (uint64_t)idx.size();
-        write_pod(fx, M);
+        // write .tsx (TSX2 with hid)
+        {
+            std::ofstream fx(tsx_path, std::ios::binary);
+            if (!fx) throw std::runtime_error("open .tsx failed");
 
-        for (auto& e : idx) write_pod(fx, e.key);
-        for (auto& e : idx) write_pod(fx, e.offset);
-        for (auto& e : idx) write_pod(fx, e.bytes);
-        for (auto& e : idx) write_pod(fx, e.hid);
-    }
+            char magic[4] = {'T','S','X','2'};
+            fx.write(magic, 4);
+            uint32_t ver = 2;
+            uint32_t reserved = 0;
+            write_pod(fx, ver);
+            write_pod(fx, reserved);
 
-    // finally write .tsm with final ht tables
-    {
-        std::ofstream f(tsm_path, std::ios::binary);
-        if (!f) throw std::runtime_error("open .tsm failed");
+            uint64_t M = (uint64_t)idx.size();
+            write_pod(fx, M);
 
-        char magic[4] = {'T','S','M','4'};
-        f.write(magic, 4);
-        uint32_t ver = 4;
-        write_pod(f, ver);
+            for (auto& e : idx) write_pod(fx, e.key);
+            for (auto& e : idx) write_pod(fx, e.offset);
+            for (auto& e : idx) write_pod(fx, e.bytes);
+            for (auto& e : idx) write_pod(fx, e.hid);
+        }
 
-        uint32_t deck_size = (uint32_t)D;
-        write_pod(f, deck_size);
+        // finally write .tsm with final ht tables
+        {
+            std::ofstream f(tsm_path, std::ios::binary);
+            if (!f) throw std::runtime_error("open .tsm failed");
+
+            char magic[4] = {'T','S','M','4'};
+            f.write(magic, 4);
+            uint32_t ver = 4;
+            write_pod(f, ver);
+
+            uint32_t deck_size = (uint32_t)D;
+            write_pod(f, deck_size);
 
         // initial board (flop) cards as uint8 list
         uint32_t bn = (uint32_t)this->initial_board.size();
@@ -644,4 +659,5 @@ void PCfrSolver::dump_strategy_tsb2(const std::string& out_path, int max_depth) 
             write_bytes(f, ht_perm[hid].data(), ht_perm[hid].size()*sizeof(uint16_t));
         }
     }
+}
 }

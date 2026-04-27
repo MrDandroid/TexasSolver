@@ -494,7 +494,8 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
     }
 #endif
 
-    const vector<float> current_strategy = trainable->getcurrentStrategy();
+    vector<float> current_strategy;
+    trainable->fillCurrentStrategy(current_strategy);
 #ifdef DEBUG
     if (current_strategy.size() != actions.size() * node_player_private_cards.size()) {
         node->printHistory();
@@ -515,10 +516,13 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
     int node_player = node->getPlayer();
 
     vector<vector<float>> results(actions.size());
+    vector<float> new_reach_prob;
+    if (node_player != player) {
+        new_reach_prob.resize(reach_probs.size());
+    }
     for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
 
         if (node_player != player) {
-            vector<float> new_reach_prob = vector<float>(reach_probs.size());
             for (std::size_t hand_id = 0; hand_id < new_reach_prob.size(); hand_id++) {
                 float strategy_prob = current_strategy[hand_id + action_id * node_player_private_cards.size()];
                 new_reach_prob[hand_id] = reach_probs[hand_id] * strategy_prob;

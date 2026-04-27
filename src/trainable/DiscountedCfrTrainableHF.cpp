@@ -23,7 +23,12 @@ bool DiscountedCfrTrainableHF::isAllZeros(const vector<float>& input_array) {
 
 const vector<float> DiscountedCfrTrainableHF::getAverageStrategy() {
     vector<float> average_strategy;
-    average_strategy = vector<float>(this->action_number * this->card_number);
+    fillAverageStrategy(average_strategy);
+    return average_strategy;
+}
+
+void DiscountedCfrTrainableHF::fillAverageStrategy(vector<float>& average_strategy) {
+    average_strategy.resize(this->action_number * this->card_number);
     for (int private_id = 0; private_id < this->card_number; private_id++) {
         float r_plus_sum = 0;
         for (int action_id = 0; action_id < action_number; action_id++) {
@@ -43,11 +48,12 @@ const vector<float> DiscountedCfrTrainableHF::getAverageStrategy() {
             }
         }
     }
-    return average_strategy;
 }
 
 const vector<float> DiscountedCfrTrainableHF::getcurrentStrategy() {
-    return this->getcurrentStrategyNoCache();
+    vector<float> current_strategy;
+    fillCurrentStrategy(current_strategy);
+    return current_strategy;
 }
 
 void DiscountedCfrTrainableHF::copyStrategy(shared_ptr<Trainable> other_trainable){
@@ -58,7 +64,12 @@ void DiscountedCfrTrainableHF::copyStrategy(shared_ptr<Trainable> other_trainabl
 
 const vector<float> DiscountedCfrTrainableHF::getcurrentStrategyNoCache() {
     vector<float> current_strategy;
-    current_strategy = vector<float>(this->action_number * this->card_number);
+    fillCurrentStrategy(current_strategy);
+    return current_strategy;
+}
+
+void DiscountedCfrTrainableHF::fillCurrentStrategy(vector<float>& current_strategy) {
+    current_strategy.resize(this->action_number * this->card_number);
     // calculate r_plus_sum on the fly, store r_plus as floats locally
     vector<float> r_plus_sum = vector<float>(this->r_plus.size());
     vector<float> r_plus = vector<float>(this->r_plus.size());
@@ -85,7 +96,6 @@ const vector<float> DiscountedCfrTrainableHF::getcurrentStrategyNoCache() {
 #endif
         }
     }
-    return current_strategy;
 }
 
 void DiscountedCfrTrainableHF::setEv(const vector<float>& evs){

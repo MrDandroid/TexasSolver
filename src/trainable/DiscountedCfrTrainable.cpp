@@ -28,7 +28,12 @@ bool DiscountedCfrTrainable::isAllZeros(const vector<float>& input_array) {
 
 const vector<float> DiscountedCfrTrainable::getAverageStrategy() {
     vector<float> average_strategy;
-    average_strategy = vector<float>(this->action_number * this->card_number);
+    fillAverageStrategy(average_strategy);
+    return average_strategy;
+}
+
+void DiscountedCfrTrainable::fillAverageStrategy(vector<float>& average_strategy) {
+    average_strategy.resize(this->action_number * this->card_number);
     for (int private_id = 0; private_id < this->card_number; private_id++) {
         float r_plus_sum = 0;
         for (int action_id = 0; action_id < action_number; action_id++) {
@@ -45,11 +50,12 @@ const vector<float> DiscountedCfrTrainable::getAverageStrategy() {
             }
         }
     }
-    return average_strategy;
 }
 
 const vector<float> DiscountedCfrTrainable::getcurrentStrategy() {
-    return this->getcurrentStrategyNoCache();
+    vector<float> current_strategy;
+    fillCurrentStrategy(current_strategy);
+    return current_strategy;
 }
 
 void DiscountedCfrTrainable::copyStrategy(shared_ptr<Trainable> other_trainable){
@@ -60,7 +66,12 @@ void DiscountedCfrTrainable::copyStrategy(shared_ptr<Trainable> other_trainable)
 
 const vector<float> DiscountedCfrTrainable::getcurrentStrategyNoCache() {
     vector<float> current_strategy;
-    current_strategy = vector<float>(this->action_number * this->card_number);
+    fillCurrentStrategy(current_strategy);
+    return current_strategy;
+}
+
+void DiscountedCfrTrainable::fillCurrentStrategy(vector<float>& current_strategy) {
+    current_strategy.resize(this->action_number * this->card_number);
     if(this->r_plus_sum.empty()){
         fill(current_strategy.begin(),current_strategy.end(),1.0 / this->action_number);
     }else {
@@ -78,7 +89,6 @@ const vector<float> DiscountedCfrTrainable::getcurrentStrategyNoCache() {
             }
         }
     }
-    return current_strategy;
 }
 
 void DiscountedCfrTrainable::setEv(const vector<float>& evs){

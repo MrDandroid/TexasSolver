@@ -92,6 +92,20 @@ void DiscountedCfrTrainableSF::fillCurrentStrategy(vector<float>& current_strate
     }
 }
 
+float DiscountedCfrTrainableSF::getCurrentStrategy(int action_id, int private_id) const {
+    float r_plus_sum = 0.0f;
+    for (int one_action_id = 0; one_action_id < action_number; one_action_id++) {
+        int index = one_action_id * this->card_number + private_id;
+        r_plus_sum += max(float(0.0), this->r_plus[index]);
+    }
+
+    if(r_plus_sum != 0) {
+        int index = action_id * this->card_number + private_id;
+        return max(float(0.0), this->r_plus[index]) / r_plus_sum;
+    }
+    return 1.0f / this->action_number;
+}
+
 void DiscountedCfrTrainableSF::setEv(const vector<float>& evs){
     if(evs.size() != this->evs.size()) throw runtime_error("size mismatch in discountcfrtrainable setEV");
     for(std::size_t i = 0;i < evs.size();i ++) if(evs[i] == evs[i])this->evs[i] = evs[i];

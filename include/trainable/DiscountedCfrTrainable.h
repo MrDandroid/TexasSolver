@@ -40,6 +40,8 @@ public:
 
     void fillCurrentStrategy(vector<float>& strategy) override;
 
+    float getCurrentStrategy(int action_id, int private_id) const override;
+
     void updateRegrets(const vector<float>& regrets, int iteration_number, const vector<float>& reach_probs) override;
 
     void setEv(const vector<float>& evs) override;

@@ -21,7 +21,7 @@ PrivateCards::PrivateCards(int card1, int card2, float weight) {
     this->board_long = Card::boardInts2long(this->card_vec);
 }
 
-uint64_t PrivateCards::toBoardLong() {
+uint64_t PrivateCards::toBoardLong() const {
     return this->board_long;
     //return Card::boardInts2long(this->card_vec);
 }

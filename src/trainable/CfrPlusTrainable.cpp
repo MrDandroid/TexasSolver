@@ -95,6 +95,18 @@ void CfrPlusTrainable::fillCurrentStrategy(vector<float>& strategy) {
     }
 }
 
+float CfrPlusTrainable::getCurrentStrategy(int action_id, int private_id) const {
+    if(this->r_plus_sum.empty()){
+        return 1.0f / this->action_number;
+    }
+
+    int index = action_id * this->card_number + private_id;
+    if(this->r_plus_sum[private_id] != 0) {
+        return this->r_plus[index] / this->r_plus_sum[private_id];
+    }
+    return 1.0f / this->action_number;
+}
+
 void CfrPlusTrainable::updateRegrets(const vector<float>& regrets, int iteration_number, const vector<float>& reach_probs) {
     this->regrets = regrets;
     if(regrets.size() != this->action_number * this->card_number) throw runtime_error("length not match");

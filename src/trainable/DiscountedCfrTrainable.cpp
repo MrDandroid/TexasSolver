@@ -3,6 +3,7 @@
 //
 
 #include "include/trainable/DiscountedCfrTrainable.h"
+#include "include/tools/HotspotProfiler.h"
 //#define DEBUG;
 
 DiscountedCfrTrainable::DiscountedCfrTrainable(vector<PrivateCards> *privateCards,
@@ -33,6 +34,7 @@ const vector<float> DiscountedCfrTrainable::getAverageStrategy() {
 }
 
 void DiscountedCfrTrainable::fillAverageStrategy(vector<float>& average_strategy) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::DiscountedFillAverage);
     average_strategy.resize(this->action_number * this->card_number);
     for (int private_id = 0; private_id < this->card_number; private_id++) {
         float r_plus_sum = 0;
@@ -71,6 +73,7 @@ const vector<float> DiscountedCfrTrainable::getcurrentStrategyNoCache() {
 }
 
 void DiscountedCfrTrainable::fillCurrentStrategy(vector<float>& current_strategy) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::DiscountedFillCurrent);
     current_strategy.resize(this->action_number * this->card_number);
     if(this->r_plus_sum.empty()){
         fill(current_strategy.begin(),current_strategy.end(),1.0 / this->action_number);
@@ -91,12 +94,25 @@ void DiscountedCfrTrainable::fillCurrentStrategy(vector<float>& current_strategy
     }
 }
 
+float DiscountedCfrTrainable::getCurrentStrategy(int action_id, int private_id) const {
+    if(this->r_plus_sum.empty()){
+        return 1.0f / this->action_number;
+    }
+
+    int index = action_id * this->card_number + private_id;
+    if(this->r_plus_sum[private_id] != 0) {
+        return max(float(0.0), this->r_plus[index]) / this->r_plus_sum[private_id];
+    }
+    return 1.0f / this->action_number;
+}
+
 void DiscountedCfrTrainable::setEv(const vector<float>& evs){
     if(evs.size() != this->evs.size()) throw runtime_error("size mismatch in discountcfrtrainable setEV");
     for(std::size_t i = 0;i < evs.size();i ++) if(evs[i] == evs[i])this->evs[i] = evs[i];
 }
 
 void DiscountedCfrTrainable::updateRegrets(const vector<float>& regrets, int iteration_number, const vector<float>& reach_probs) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::DiscountedUpdateRegrets);
 
 #ifdef DEBUG
     if(regrets.size() != this->action_number * this->card_number) throw runtime_error("length not match");

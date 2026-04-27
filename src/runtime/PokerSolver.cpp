@@ -12,6 +12,7 @@
 #include <QtCore/QElapsedTimer>
 #include <src/solver/GzRawWriter.h>
 #include <src/solver/strategyjsonexporterv2.h>
+#include "include/tools/HotspotProfiler.h"
 using nlohmann::json;
 
 
@@ -108,43 +109,55 @@ long long PokerSolver::estimate_tree_memory(QString range1,QString range2,QStrin
 
 void PokerSolver::train(string p1_range, string p2_range, string boards, string log_file, int iteration_number,
                         int print_interval, string algorithm,int warmup,float accuracy,bool use_isomorphism, int use_halffloats, int threads) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PokerTrain);
     string player1RangeStr = p1_range;
     string player2RangeStr = p2_range;
 
-    vector<string> board_str_arr = string_split(boards,',');
     vector<int> initialBoard;
-    for(string one_board_str:board_str_arr){
-        initialBoard.push_back(Card::strCard2int(one_board_str));
+    vector<PrivateCards> range1;
+    vector<PrivateCards> range2;
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PokerTrainParseRanges);
+        vector<string> board_str_arr = string_split(boards,',');
+        for(string one_board_str:board_str_arr){
+            initialBoard.push_back(Card::strCard2int(one_board_str));
+        }
+
+        range1 = PrivateRangeConverter::rangeStr2Cards(player1RangeStr,initialBoard);
+        range2 = PrivateRangeConverter::rangeStr2Cards(player2RangeStr,initialBoard);
+        uint64_t initial_board_long = Card::boardInts2long(initialBoard);
+
+        this->player1Range = noDuplicateRange(range1,initial_board_long);
+        this->player2Range = noDuplicateRange(range2,initial_board_long);
     }
 
-    vector<PrivateCards> range1 = PrivateRangeConverter::rangeStr2Cards(player1RangeStr,initialBoard);
-    vector<PrivateCards> range2 = PrivateRangeConverter::rangeStr2Cards(player2RangeStr,initialBoard);
-    uint64_t initial_board_long = Card::boardInts2long(initialBoard);
-
-    this->player1Range = noDuplicateRange(range1,initial_board_long);
-    this->player2Range = noDuplicateRange(range2,initial_board_long);
-
     string logfile_name = log_file;
-    this->solver = make_shared<PCfrSolver>(
-        game_tree,
-        range1,
-        range2,
-        initialBoard,
-        compairer,
-        deck,
-        iteration_number,
-        false,
-        print_interval,
-        logfile_name,
-        algorithm,
-        Solver::MonteCarolAlg::NONE,
-        warmup,
-        accuracy,
-        use_isomorphism,
-        use_halffloats,
-        threads
-        );
-    this->solver->train();
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PokerTrainConstructSolver);
+        this->solver = make_shared<PCfrSolver>(
+            game_tree,
+            range1,
+            range2,
+            initialBoard,
+            compairer,
+            deck,
+            iteration_number,
+            false,
+            print_interval,
+            logfile_name,
+            algorithm,
+            Solver::MonteCarolAlg::NONE,
+            warmup,
+            accuracy,
+            use_isomorphism,
+            use_halffloats,
+            threads
+            );
+    }
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PokerTrainSolve);
+        this->solver->train();
+    }
 }
 
 // 旧：一次性 DOM 导出（体积大）

@@ -284,9 +284,16 @@ $runJson = Join-Path $runsDir "$runStamp.json"
 Copy-Item -LiteralPath $latestJson -Destination $runJson -Force
 
 $bestJson = Join-Path $OutputDir "best_result.json"
-$canUpdateBest = $comparison.status -eq "match" -or
+$isDefaultBenchShape = $ExportBin -and
+    $MaxIteration -eq 200 -and
+    $PrintInterval -eq 10 -and
+    [math]::Abs($Accuracy - 0.5) -lt 0.0000001 -and
+    $DumpRounds -eq 2
+$canUpdateBest = $isDefaultBenchShape -and (
+    $comparison.status -eq "match" -or
     $comparison.status -eq "baseline_created" -or
     $comparison.status -eq "baseline_updated"
+)
 if ($canUpdateBest -and $null -ne $timing.solve_ms) {
     $updateBest = $true
     if (Test-Path $bestJson) {

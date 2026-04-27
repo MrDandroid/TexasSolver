@@ -12,6 +12,7 @@
 #include <cmath>
 #include <iomanip>
 #include <zlib.h>
+#include "include/tools/HotspotProfiler.h"
 static inline float calc_rake_amount(float pot, float rake_pct, float rake_cap, bool no_flop_no_drop, GameTreeNode::GameRound round) {
     if (rake_pct <= 0.0f) return 0.0f;
     if (no_flop_no_drop && round == GameTreeNode::GameRound::PREFLOP) return 0.0f;
@@ -173,6 +174,7 @@ PCfrSolver::noDuplicateRange(const vector<PrivateCards> &private_range, uint64_t
 }
 
 void PCfrSolver::setTrainable(shared_ptr<GameTreeNode> root) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrSetTrainable);
     if(root->getType() == GameTreeNode::ACTION){
         shared_ptr<ActionNode> action_node = std::dynamic_pointer_cast<ActionNode>(root);
 
@@ -289,6 +291,7 @@ vector<float> PCfrSolver::cfr(int player, shared_ptr<GameTreeNode> node, const v
 vector<float>
 PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<float> &reach_probs, int iter,
                          uint64_t current_board,int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrChanceUtility);
     vector<Card>& cards = this->deck.getCards();
     //float[] cardWeights = getCardsWeights(player,reach_probs[1 - player],current_board);
 
@@ -468,6 +471,7 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
 vector<float>
 PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<float> &reach_probs, int iter,
                          uint64_t current_board,int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionUtility);
     int oppo = 1 - player;
     const vector<PrivateCards>& node_player_private_cards = this->ranges[node->getPlayer()];
 
@@ -494,57 +498,56 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
     }
 #endif
 
-    vector<float> current_strategy;
-    trainable->fillCurrentStrategy(current_strategy);
-#ifdef DEBUG
-    if (current_strategy.size() != actions.size() * node_player_private_cards.size()) {
-        node->printHistory();
-        throw runtime_error(tfm::format(
-                "length not match %s - %s \n action size %s private_card size %s"
-                ,current_strategy.size()
-                ,actions.size() * node_player_private_cards.size()
-                ,actions.size()
-                ,node_player_private_cards.size()
-        ));
-    }
-#endif
-
-    //为了节省计算成本将action regret 存在一位数组而不是二维数组中，两个纬度分别是（该infoset有多少动作,该palyer有多少holecard）
-    vector<float> regrets(actions.size() * node_player_private_cards.size());
-
-    vector<vector<float>> all_action_utility(actions.size());
     int node_player = node->getPlayer();
 
-    vector<vector<float>> results(actions.size());
-    vector<float> new_reach_prob;
     if (node_player != player) {
-        new_reach_prob.resize(reach_probs.size());
-    }
-    for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
-
-        if (node_player != player) {
+        vector<float> new_reach_prob(reach_probs.size());
+        for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
             for (std::size_t hand_id = 0; hand_id < new_reach_prob.size(); hand_id++) {
-                float strategy_prob = current_strategy[hand_id + action_id * node_player_private_cards.size()];
+                float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
                 new_reach_prob[hand_id] = reach_probs[hand_id] * strategy_prob;
             }
-            //#pragma omp task shared(results,action_id)
-            results[action_id] = this->cfr(player, children[action_id], new_reach_prob, iter,
-                                           current_board,deal);
-        }else {
-            //#pragma omp task shared(results,action_id)
-            results[action_id] = this->cfr(player, children[action_id], reach_probs, iter,
-                                           current_board,deal);
-        }
+            vector<float> action_utilities = this->cfr(player, children[action_id], new_reach_prob, iter,
+                                                       current_board,deal);
+            if(action_utilities.empty()){
+                continue;
+            }
 
+            // cfr缁撴灉鏄瘡鎵嬬墝鐨勬敹鐩婏紝payoffs浠ｈ〃鐨勪篃鏄瘡鎵嬬墝鐨勬敹鐩婏紝浠栦滑鐨勯暱搴︾悊搴旂浉绛?#ifdef DEBUG
+#ifdef DEBUG
+            if (action_utilities.size() != payoffs.size()) {
+                cout << ("errmsg") << endl;
+                cout << (tfm::format("node player %s ", node->getPlayer())) << endl;
+                node->printHistory();
+                throw runtime_error(
+                        tfm::format(
+                                "action and payoff length not match %s - %s", action_utilities.size(),
+                                payoffs.size()
+                        )
+                );
+            }
+#endif
+
+            for (std::size_t hand_id = 0; hand_id < action_utilities.size(); hand_id++) {
+                payoffs[hand_id] += action_utilities[hand_id];
+            }
+        }
+        return payoffs;
+    }
+
+    vector<vector<float>> results(actions.size());
+    for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
+        //#pragma omp task shared(results,action_id)
+        results[action_id] = this->cfr(player, children[action_id], reach_probs, iter,
+                                       current_board,deal);
     }
 
     //#pragma omp taskwait
     for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
-        vector<float> action_utilities = results[action_id];
+        const vector<float>& action_utilities = results[action_id];
         if(action_utilities.empty()){
             continue;
         }
-        all_action_utility[action_id] = action_utilities;
 
         // cfr结果是每手牌的收益，payoffs代表的也是每手牌的收益，他们的长度理应相等
 #ifdef DEBUG
@@ -562,17 +565,13 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
 #endif
 
         for (std::size_t hand_id = 0; hand_id < action_utilities.size(); hand_id++) {
-            if (player == node->getPlayer()) {
-                float strategy_prob = current_strategy[hand_id + action_id * node_player_private_cards.size()];
-                payoffs[hand_id] += strategy_prob * (action_utilities)[hand_id];
-            } else {
-                payoffs[hand_id] += (action_utilities)[hand_id];
-            }
+            float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
+            payoffs[hand_id] += strategy_prob * action_utilities[hand_id];
         }
     }
 
 
-    if (player == node->getPlayer()) {
+        vector<float> regrets(actions.size() * node_player_private_cards.size());
         for (std::size_t i = 0; i < node_player_private_cards.size(); i++) {
             //boolean regrets_all_negative = true;
             for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
@@ -580,7 +579,7 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
                 // regret[action_id * player_hc: (action_id + 1) * player_hc]
                 //     = all_action_utilitiy[action_id] - payoff[action_id]
                 regrets[action_id * node_player_private_cards.size() + i] =
-                        (all_action_utility[action_id])[i] - payoffs[i];
+                        results[action_id][i] - payoffs[i];
             }
         }
 
@@ -624,7 +623,7 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
             vector<float> evs(actions.size() * node_player_private_cards.size(),0.0);
             for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
                 for (std::size_t hand_id = 0; hand_id < node_player_private_cards.size(); hand_id++) {
-                    float one_ev = (all_action_utility)[action_id][hand_id];//current_strategy; //[hand_id + action_id * node_player_private_cards.size()];
+                    float one_ev = results[action_id][hand_id];//current_strategy; //[hand_id + action_id * node_player_private_cards.size()];
 
                     int oppo_same_card_ind = this->pcm.indPlayer2Player(player,oppo,hand_id);
                     float plus_reach_prob;
@@ -648,7 +647,6 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
             trainable->setEv(evs);
         }
 
-    }
     return payoffs;
 
 }
@@ -656,6 +654,7 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
 vector<float>
 PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vector<float> &reach_probs,
                                     int iter, uint64_t current_board,int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrShowdownUtility);
 
     int oppo = 1 - player;
 
@@ -757,6 +756,7 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
 vector<float>
 PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vector<float> &reach_prob, int iter,
                            uint64_t current_board,int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrTerminalUtility);
     float player_payoff = node->get_payoffs()[player];
 
     // === rake adjust for terminal (fold) ===
@@ -806,6 +806,7 @@ PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vec
 }
 
 void PCfrSolver::findGameSpecificIsomorphisms() {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrFindIso);
     // hand isomorphisms
     vector<Card> board_cards = Card::long2boardCards(this->initial_board_long);
     for(int i = 0;i <= 1;i ++){
@@ -883,6 +884,7 @@ void PCfrSolver::stop() {
 }
 
 void PCfrSolver::train() {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrTrain);
 
     vector<vector<PrivateCards>> player_privates(this->player_number);
     player_privates[0] = pcm.getPreflopCards(0);
@@ -893,7 +895,10 @@ void PCfrSolver::train() {
 
     BestResponse br = BestResponse(player_privates,this->player_number,this->pcm,this->rrm,this->deck,this->debug,this->color_iso_offset,this->split_round,this->num_threads,this->use_halffloats);
 
-    br.printExploitability(tree->getRoot(), 0, tree->getRoot()->getPot(), initial_board_long);
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrInitialExploitability);
+        br.printExploitability(tree->getRoot(), 0, tree->getRoot()->getPot(), initial_board_long);
+    }
 
     vector<vector<float>> reach_probs = this->getReachProbs();
     ofstream fileWriter;
@@ -902,7 +907,50 @@ void PCfrSolver::train() {
     uint64_t begintime = timeSinceEpochMillisec();
     uint64_t endtime = timeSinceEpochMillisec();
 
-    for(int i = 0;i < this->iteration_number;i++){
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrTrainingLoop);
+        for(int i = 0;i < this->iteration_number;i++){
+            for(int player_id = 0;player_id < this->player_number;player_id ++) {
+                this->round_deal = vector<int>{-1,-1,-1,-1};
+                //#pragma omp parallel
+                {
+                    //#pragma omp single
+                    {
+                        //this->distributing_task = true;
+                        cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0);
+                        //throw runtime_error("returning...");
+                    }
+                }
+            }
+            if( (i % this->print_interval == 0 && i != 0 && i >= this->warmup) || this->nowstop) {
+                endtime = timeSinceEpochMillisec();
+                long time_ms = endtime - begintime;
+                qDebug().noquote() << "-------------------";
+                float expliotibility = br.printExploitability(tree->getRoot(), i + 1, tree->getRoot()->getPot(), initial_board_long);
+                qDebug().noquote() << QObject::tr("time used: ") << float(time_ms) / 1000 << QObject::tr(" second.");
+                if(!this->logfile.empty()){
+                    json jo;
+                    jo["iteration"] = i;
+                    jo["exploitibility"] = expliotibility;
+                    jo["time_ms"] = time_ms;
+                    fileWriter << jo << endl;
+                }
+                if(expliotibility <= this->accuracy){
+                    break;
+                }
+                if(this->nowstop){
+                    this->nowstop = false;
+                    break;
+                }
+                //begintime = timeSinceEpochMillisec();
+            }
+        }
+    }
+
+    qDebug().noquote() << QObject::tr("collecting statics");
+    this->collecting_statics = true;
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrCollectStatics);
         for(int player_id = 0;player_id < this->player_number;player_id ++) {
             this->round_deal = vector<int>{-1,-1,-1,-1};
             //#pragma omp parallel
@@ -910,45 +958,8 @@ void PCfrSolver::train() {
                 //#pragma omp single
                 {
                     //this->distributing_task = true;
-                    cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0);
-                    //throw runtime_error("returning...");
+                    cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], this->iteration_number, this->initial_board_long,0);
                 }
-            }
-        }
-        if( (i % this->print_interval == 0 && i != 0 && i >= this->warmup) || this->nowstop) {
-            endtime = timeSinceEpochMillisec();
-            long time_ms = endtime - begintime;
-            qDebug().noquote() << "-------------------";
-            float expliotibility = br.printExploitability(tree->getRoot(), i + 1, tree->getRoot()->getPot(), initial_board_long);
-            qDebug().noquote() << QObject::tr("time used: ") << float(time_ms) / 1000 << QObject::tr(" second.");
-            if(!this->logfile.empty()){
-                json jo;
-                jo["iteration"] = i;
-                jo["exploitibility"] = expliotibility;
-                jo["time_ms"] = time_ms;
-                fileWriter << jo << endl;
-            }
-            if(expliotibility <= this->accuracy){
-                break;
-            }
-            if(this->nowstop){
-                this->nowstop = false;
-                break;
-            }
-            //begintime = timeSinceEpochMillisec();
-        }
-    }
-
-    qDebug().noquote() << QObject::tr("collecting statics");
-    this->collecting_statics = true;
-    for(int player_id = 0;player_id < this->player_number;player_id ++) {
-        this->round_deal = vector<int>{-1,-1,-1,-1};
-        //#pragma omp parallel
-        {
-            //#pragma omp single
-            {
-                //this->distributing_task = true;
-                cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], this->iteration_number, this->initial_board_long,0);
             }
         }
     }

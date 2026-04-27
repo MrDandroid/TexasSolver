@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QTranslator>
 #include <array>
+#include "include/tools/HotspotProfiler.h"
 //#define DEBUG;
 
 BestResponse::BestResponse(vector<vector<PrivateCards>> &private_combos, int player_number,
@@ -38,6 +39,7 @@ BestResponse::BestResponse(vector<vector<PrivateCards>> &private_combos, int pla
 
 float BestResponse::printExploitability(shared_ptr<GameTreeNode> root, int iterationCount, float initial_pot,
                                         uint64_t initialBoard) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::BestResponsePrintExploitability);
     if(this->reach_probs.empty())
         this->reach_probs = vector<vector<float>> (this->player_number);
 
@@ -64,6 +66,7 @@ float BestResponse::printExploitability(shared_ptr<GameTreeNode> root, int itera
 
 float BestResponse::getBestReponseEv(shared_ptr<GameTreeNode> node, int player, vector<vector<float>> reach_probs,
                                      uint64_t initialBoard, int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::BestResponseGetEv);
     float ev = 0;
     //考虑（1）相对的手牌 proability,(2)被场面和对手ban掉的手牌
     const vector<float>& private_cards_evs = bestResponse(node, player, reach_probs, initialBoard, deal);
@@ -116,6 +119,7 @@ vector<float> BestResponse::bestResponse(shared_ptr<GameTreeNode> node, int play
 vector<float>
 BestResponse::chanceBestReponse(shared_ptr<ChanceNode> node, int player,const vector<vector<float>>& reach_probs,
                                 uint64_t current_board, int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::BestResponseChance);
     vector<Card>& cards = this->deck.getCards();
 
     int card_num = node->getCards().size();
@@ -231,6 +235,7 @@ BestResponse::chanceBestReponse(shared_ptr<ChanceNode> node, int player,const ve
 vector<float>
 BestResponse::actionBestResponse(shared_ptr<ActionNode> node, int player, const vector<vector<float>>& reach_probs,
                                  uint64_t board, int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::BestResponseAction);
     if(player == node->getPlayer()){
         // 如果是自己在做决定，那么肯定选对自己的最有利的，反之对于对方来说，这个就是我方expliot了对方,
         // 这里可以当成"player"做决定的时候，action prob是0-1分布，因为需要使用最好的策略去expliot对方，最好的策略一定是ont-hot的
@@ -332,6 +337,7 @@ BestResponse::actionBestResponse(shared_ptr<ActionNode> node, int player, const 
 vector<float>
 BestResponse::terminalBestReponse(shared_ptr<TerminalNode> node, int player, const vector<vector<float>>& reach_probs,
                                   uint64_t board, int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::BestResponseTerminal);
     uint64_t board_long = board;
     int oppo = 1 - player;
     const vector<RiverCombs>& player_combs = this->rrm.getRiverCombos(player,this->pcm.getPreflopCards(player),board);  //this.river_combos[player];
@@ -399,6 +405,7 @@ BestResponse::terminalBestReponse(shared_ptr<TerminalNode> node, int player, con
 vector<float>
 BestResponse::showdownBestResponse(shared_ptr<ShowdownNode> node, int player,const vector<vector<float>>& reach_probs,
                                    uint64_t board, int deal) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::BestResponseShowdown);
 #ifdef DEBUG
     if(this->player_number != 2) throw runtime_error("player number is not 2");
 #endif

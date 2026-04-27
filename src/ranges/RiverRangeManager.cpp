@@ -3,6 +3,7 @@
 //
 
 #include "include/ranges/RiverRangeManager.h"
+#include "include/tools/HotspotProfiler.h"
 
 #include <utility>
 
@@ -21,6 +22,7 @@ RiverRangeManager::getRiverCombos(int player, const vector<PrivateCards> &riverC
 
 const vector<RiverCombs> &
 RiverRangeManager::getRiverCombos(int player, const vector<PrivateCards> &preflopCombos, uint64_t board_long) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::RiverRangeGet);
     unordered_map<uint64_t , vector<RiverCombs>>* riverRanges;
 
     if (player == 0)
@@ -40,6 +42,7 @@ RiverRangeManager::getRiverCombos(int player, const vector<PrivateCards> &preflo
     }
     this->maplock->unlock();
 
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::RiverRangeBuild);
     int count = 0;
 
     for (auto one_hand : preflopCombos) {

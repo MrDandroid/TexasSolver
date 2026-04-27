@@ -10,6 +10,7 @@ param(
     [switch]$DisableLightRiverCombs,
     [switch]$DisableShowdownFastFields,
     [switch]$DisableTerminalSameCardCache,
+    [switch]$OptimizeO2,
     [string]$OutputDir = ""
 )
 
@@ -60,6 +61,7 @@ $env:PATH = "$mingwRoot\bin;$qtRoot\bin;$env:PATH"
 $qmake = Join-Path $qtRoot "bin\qmake.exe"
 $make = Join-Path $mingwRoot "bin\mingw32-make.exe"
 $gxx = Join-Path $mingwRoot "bin\g++.exe"
+$optimizationLevel = if ($OptimizeO2) { "-O2" } else { "-O3" }
 $optLightRiverCombs = if ($DisableLightRiverCombs) { 0 } else { 1 }
 $optShowdownFastFields = if ($DisableShowdownFastFields) { 0 } else { 1 }
 $optTerminalSameCardCache = if ($DisableTerminalSameCardCache) { 0 } else { 1 }
@@ -70,6 +72,9 @@ $optimizationDefines = @(
 )
 
 $buildName = "Desktop_Qt_5_15_2_MinGW_64_bit-release"
+if ($optimizationLevel -eq "-O3") {
+    $buildName += "-O3"
+}
 if ($ProfileHotspots) {
     $buildName += "-hotspots"
 }
@@ -89,7 +94,7 @@ New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 if (!(Test-Path (Join-Path $buildDir "Makefile.Release"))) {
     Push-Location $buildDir
     try {
-        $qmakeArgs = @("..\..\TexasSolverGui.pro", "-spec", "win32-g++", "CONFIG+=release")
+        $qmakeArgs = @("..\..\TexasSolverGui.pro", "-spec", "win32-g++", "CONFIG+=release", "QMAKE_CXXFLAGS_RELEASE+=$optimizationLevel")
         if ($ProfileHotspots) {
             $qmakeArgs += "DEFINES+=TEXASSOLVER_HOTSPOT_PROFILING"
         }
@@ -124,7 +129,7 @@ $benchmarkDefines = $optimizationDefines | ForEach-Object { "-D$_" }
 
 $compileArgs = @(
     "-std=gnu++17",
-    "-O2",
+    $optimizationLevel,
     "-fopenmp",
     "-mconsole"
 ) + $benchmarkDefines + @(
@@ -254,6 +259,7 @@ $summary = [ordered]@{
     repo_root = $repoRoot
     runner = $source
     config = $config
+    compiler_optimization = $optimizationLevel
     optimization_switches = [ordered]@{
         light_river_combs = [bool]$optLightRiverCombs
         showdown_fast_fields = [bool]$optShowdownFastFields
@@ -358,6 +364,7 @@ if ($ProfileHotspots) {
 }
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
+Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
 Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"

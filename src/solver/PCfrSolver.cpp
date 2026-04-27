@@ -683,12 +683,12 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
 
     // ===== win part（保持你原有逻辑，但乘 win_payoff_adj）=====
     float winsum = 0.0f;
-    vector<float> card_winsum(52, 0.0f);
+    std::array<float, 52> card_winsum{};
 
     // ===== tie cache（新加）=====
     int cached_rank = INT32_MIN;
     float tiesum = 0.0f;
-    vector<float> card_tiesum(52, 0.0f);
+    std::array<float, 52> card_tiesum{};
     int j_tie_end = 0;
 
     int j = 0;
@@ -731,7 +731,7 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
 
     // ===== lose part（你原有逻辑保持，但不需要改，仍乘 lose_payoff）=====
     float losssum = 0.0f;
-    vector<float>& card_losssum = card_winsum;
+    std::array<float, 52>& card_losssum = card_winsum;
     std::fill(card_losssum.begin(), card_losssum.end(), 0.0f);
 
     j = (int)oppo_combs.size() - 1;
@@ -775,8 +775,7 @@ PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vec
     vector<float> payoffs = vector<float>(this->playerHands(player).size());
 
     float oppo_sum = 0;
-    vector<float> oppo_card_sum = vector<float> (52);
-    fill(oppo_card_sum.begin(),oppo_card_sum.end(),0);
+    std::array<float, 52> oppo_card_sum{};
 
     for(std::size_t i = 0;i < oppo_hand.size();i ++){
         oppo_card_sum[oppo_hand[i].card1] += reach_prob[i];
@@ -786,7 +785,7 @@ PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vec
 
     for(std::size_t i = 0;i < player_hand.size();i ++){
         const PrivateCards& one_player_hand = player_hand[i];
-        if(Card::boardsHasIntercept(current_board,Card::boardInts2long(one_player_hand.get_hands()))){
+        if(Card::boardsHasIntercept(current_board,one_player_hand.toBoardLong())){
             continue;
         }
         int oppo_same_card_ind = this->pcm.indPlayer2Player(player,oppo,i);

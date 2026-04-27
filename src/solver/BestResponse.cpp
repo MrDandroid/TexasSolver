@@ -6,6 +6,7 @@
 #include <QtCore>
 #include <QObject>
 #include <QTranslator>
+#include <array>
 //#define DEBUG;
 
 BestResponse::BestResponse(vector<vector<PrivateCards>> &private_combos, int player_number,
@@ -345,7 +346,7 @@ BestResponse::terminalBestReponse(shared_ptr<TerminalNode> node, int player, con
     if(this->player_number != 2) throw runtime_error("player NE 2 not supported");
 #endif
     // 对手的手牌可能需要和其reach prob一样长
-    vector<float> oppo_card_sum(52);
+    std::array<float, 52> oppo_card_sum{};
 
     //用于记录对手总共的手牌绝对prob之和
     float oppo_prob_sum = 0;
@@ -353,7 +354,7 @@ BestResponse::terminalBestReponse(shared_ptr<TerminalNode> node, int player, con
     const vector<float>& oppo_reach_prob = reach_probs[1 - player];
     for(std::size_t oppo_hand = 0;oppo_hand < oppo_combs.size(); oppo_hand ++){
         const RiverCombs& one_hc = oppo_combs[oppo_hand];
-        uint64_t one_hc_long  = Card::boardInts2long(one_hc.private_cards.get_hands());
+        uint64_t one_hc_long  = one_hc.private_cards.toBoardLong();
 
         // 如果对手手牌和public card有重叠，那么这组牌不可能存在
         if(Card::boardsHasIntercept(one_hc_long,board_long)){
@@ -368,7 +369,7 @@ BestResponse::terminalBestReponse(shared_ptr<TerminalNode> node, int player, con
 
     for(std::size_t player_hand = 0;player_hand < player_combs.size();player_hand ++) {
         const RiverCombs& player_hc = player_combs[player_hand];
-        uint64_t player_hc_long = Card::boardInts2long(player_hc.private_cards.get_hands());
+        uint64_t player_hc_long = player_hc.private_cards.toBoardLong();
         if(Card::boardsHasIntercept(player_hc_long,board_long)){
             payoffs[player_hand] = 0;
         }else{
@@ -413,8 +414,7 @@ BestResponse::showdownBestResponse(shared_ptr<ShowdownNode> node, int player,con
 
     // 计算胜利时的payoff
     float winsum = 0;
-    vector<float> card_winsum(52);
-    for(std::size_t i = 0;i < card_winsum.size();i ++) card_winsum[i] = 0;
+    std::array<float, 52> card_winsum{};
 
     int j = 0;
     //if(player_combs.length != oppo_combs.length) throw new RuntimeException("");
@@ -437,7 +437,7 @@ BestResponse::showdownBestResponse(shared_ptr<ShowdownNode> node, int player,con
 
     // 计算失败时的payoff
     float losssum = 0;
-    vector<float> card_losssum(52);
+    std::array<float, 52> card_losssum{};
 
     j = oppo_combs.size() - 1;
     for(int i = player_combs.size() - 1;i >= 0;i --){

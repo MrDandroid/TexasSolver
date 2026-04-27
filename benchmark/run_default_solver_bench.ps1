@@ -7,6 +7,9 @@ param(
     [double]$Accuracy = 0.5,
     [int]$DumpRounds = 2,
     [switch]$ProfileHotspots,
+    [switch]$DisableLightRiverCombs,
+    [switch]$DisableShowdownFastFields,
+    [switch]$DisableTerminalSameCardCache,
     [string]$OutputDir = ""
 )
 
@@ -57,10 +60,27 @@ $env:PATH = "$mingwRoot\bin;$qtRoot\bin;$env:PATH"
 $qmake = Join-Path $qtRoot "bin\qmake.exe"
 $make = Join-Path $mingwRoot "bin\mingw32-make.exe"
 $gxx = Join-Path $mingwRoot "bin\g++.exe"
-$buildName = if ($ProfileHotspots) {
-    "Desktop_Qt_5_15_2_MinGW_64_bit-release-hotspots"
-} else {
-    "Desktop_Qt_5_15_2_MinGW_64_bit-release"
+$optLightRiverCombs = if ($DisableLightRiverCombs) { 0 } else { 1 }
+$optShowdownFastFields = if ($DisableShowdownFastFields) { 0 } else { 1 }
+$optTerminalSameCardCache = if ($DisableTerminalSameCardCache) { 0 } else { 1 }
+$optimizationDefines = @(
+    "TEXASSOLVER_OPT_LIGHT_RIVER_COMBS=$optLightRiverCombs",
+    "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
+    "TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE=$optTerminalSameCardCache"
+)
+
+$buildName = "Desktop_Qt_5_15_2_MinGW_64_bit-release"
+if ($ProfileHotspots) {
+    $buildName += "-hotspots"
+}
+if ($DisableLightRiverCombs) {
+    $buildName += "-no-light-river-combs"
+}
+if ($DisableShowdownFastFields) {
+    $buildName += "-no-showdown-fast-fields"
+}
+if ($DisableTerminalSameCardCache) {
+    $buildName += "-no-terminal-same-card-cache"
 }
 $buildDir = Join-Path $repoRoot "build\$buildName"
 $releaseDir = Join-Path $buildDir "release"
@@ -72,6 +92,9 @@ if (!(Test-Path (Join-Path $buildDir "Makefile.Release"))) {
         $qmakeArgs = @("..\..\TexasSolverGui.pro", "-spec", "win32-g++", "CONFIG+=release")
         if ($ProfileHotspots) {
             $qmakeArgs += "DEFINES+=TEXASSOLVER_HOTSPOT_PROFILING"
+        }
+        foreach ($define in $optimizationDefines) {
+            $qmakeArgs += "DEFINES+=$define"
         }
         & $qmake @qmakeArgs
         if ($LASTEXITCODE -ne 0) {
@@ -97,12 +120,14 @@ $exe = Join-Path $OutputDir "default_solver_bench.exe"
 $objects = Get-ChildItem $releaseDir -Filter "*.o" |
     Where-Object { $_.Name -ne "main.o" } |
     ForEach-Object { $_.FullName }
+$benchmarkDefines = $optimizationDefines | ForEach-Object { "-D$_" }
 
 $compileArgs = @(
     "-std=gnu++17",
     "-O2",
     "-fopenmp",
-    "-mconsole",
+    "-mconsole"
+) + $benchmarkDefines + @(
     "-I$repoRoot",
     "-I$(Join-Path $repoRoot 'include')",
     "-I$(Join-Path $repoRoot 'src\3rdparty\sqlite')",
@@ -229,6 +254,11 @@ $summary = [ordered]@{
     repo_root = $repoRoot
     runner = $source
     config = $config
+    optimization_switches = [ordered]@{
+        light_river_combs = [bool]$optLightRiverCombs
+        showdown_fast_fields = [bool]$optShowdownFastFields
+        terminal_same_card_cache = [bool]$optTerminalSameCardCache
+    }
     timing_ms = $timing
     final_iteration = if ($finalIterText) { [int]$finalIterText } else { $null }
     final_exploitability_percent = if ($finalExploitText) { [double]$finalExploitText } else { $null }
@@ -328,6 +358,7 @@ if ($ProfileHotspots) {
 }
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

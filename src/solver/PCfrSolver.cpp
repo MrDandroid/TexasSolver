@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <zlib.h>
 #include "include/tools/HotspotProfiler.h"
+#include "include/tools/OptimizationSwitches.h"
 static inline float calc_rake_amount(float pot, float rake_pct, float rake_cap, bool no_flop_no_drop, GameTreeNode::GameRound round) {
     if (rake_pct <= 0.0f) return 0.0f;
     if (no_flop_no_drop && round == GameTreeNode::GameRound::PREFLOP) return 0.0f;
@@ -108,6 +109,18 @@ PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, v
     private_cards[0] = range1;
     private_cards[1] = range2;
     pcm = PrivateCardsManager(private_cards,this->player_number,Card::boardInts2long(this->initial_board));
+#if TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE
+    this->same_card_index = vector<vector<vector<int>>>(this->player_number, vector<vector<int>>(this->player_number));
+    for (int from_player = 0; from_player < this->player_number; ++from_player) {
+        for (int to_player = 0; to_player < this->player_number; ++to_player) {
+            vector<int>& index_map = this->same_card_index[from_player][to_player];
+            index_map.resize(this->ranges[from_player].size());
+            for (std::size_t hand_id = 0; hand_id < this->ranges[from_player].size(); ++hand_id) {
+                index_map[hand_id] = this->pcm.indPlayer2Player(from_player, to_player, (int)hand_id);
+            }
+        }
+    }
+#endif
     this->debug = debug;
     this->print_interval = print_interval;
     this->monteCarolAlg = monteCarolAlg;
@@ -429,7 +442,8 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
 
     for(std::size_t card = 0;card < node->getCards().size();card ++) {
         Card *one_card = const_cast<Card *>(&(node->getCards()[card]));
-        vector<float> child_utility;
+        vector<float> exchanged_child_utility;
+        const vector<float>* child_utility_ptr;
         int offset = this->color_iso_offset[deal][one_card->getCardInt() % 4];
         if(offset < 0) {
             int rank1 = one_card->getCardInt() % 4;
@@ -437,11 +451,13 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
 #ifdef DEBUG
             if(rank2 < 0) throw runtime_error("rank error");
 #endif
-            child_utility = results[one_card->getNumberInDeckInt() + offset];
-            exchange_color(child_utility,this->pcm.getPreflopCards(player),rank1,rank2);
+            exchanged_child_utility = results[one_card->getNumberInDeckInt() + offset];
+            exchange_color(exchanged_child_utility,this->pcm.getPreflopCards(player),rank1,rank2);
+            child_utility_ptr = &exchanged_child_utility;
         }else{
-            child_utility = results[one_card->getNumberInDeckInt()];
+            child_utility_ptr = &results[one_card->getNumberInDeckInt()];
         }
+        const vector<float>& child_utility = *child_utility_ptr;
         if(child_utility.empty())
             continue;
 
@@ -696,9 +712,17 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
 
         while (j < (int)oppo_combs.size() && one_player_comb.rank < oppo_combs[j].rank) {
             const RiverCombs& one_oppo_comb = oppo_combs[j];
+#if TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS
+            const int oppo_reach_index = one_oppo_comb.reach_prob_index;
+            const float oppo_reach = reach_probs[oppo_reach_index];
+            winsum += oppo_reach;
+            card_winsum[one_oppo_comb.card1] += oppo_reach;
+            card_winsum[one_oppo_comb.card2] += oppo_reach;
+#else
             winsum += reach_probs[one_oppo_comb.reach_prob_index];
-            card_winsum[one_oppo_comb.private_cards.card1] += reach_probs[one_oppo_comb.reach_prob_index];
-            card_winsum[one_oppo_comb.private_cards.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+            card_winsum[one_oppo_comb.card1] += reach_probs[one_oppo_comb.reach_prob_index];
+            card_winsum[one_oppo_comb.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+#endif
             j++;
         }
 
@@ -710,15 +734,23 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
             j_tie_end = j;
             while (j_tie_end < (int)oppo_combs.size() && oppo_combs[j_tie_end].rank == cached_rank) {
                 const RiverCombs& one_oppo_comb = oppo_combs[j_tie_end];
+#if TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS
+                const int oppo_reach_index = one_oppo_comb.reach_prob_index;
+                const float oppo_reach = reach_probs[oppo_reach_index];
+                tiesum += oppo_reach;
+                card_tiesum[one_oppo_comb.card1] += oppo_reach;
+                card_tiesum[one_oppo_comb.card2] += oppo_reach;
+#else
                 tiesum += reach_probs[one_oppo_comb.reach_prob_index];
-                card_tiesum[one_oppo_comb.private_cards.card1] += reach_probs[one_oppo_comb.reach_prob_index];
-                card_tiesum[one_oppo_comb.private_cards.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+                card_tiesum[one_oppo_comb.card1] += reach_probs[one_oppo_comb.reach_prob_index];
+                card_tiesum[one_oppo_comb.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+#endif
                 j_tie_end++;
             }
         }
 
-        const int c1 = one_player_comb.private_cards.card1;
-        const int c2 = one_player_comb.private_cards.card2;
+        const int c1 = one_player_comb.card1;
+        const int c2 = one_player_comb.card2;
 
         const float win_prob = (winsum - card_winsum[c1] - card_winsum[c2]);
         const float tie_prob = (tiesum - card_tiesum[c1] - card_tiesum[c2]);
@@ -738,14 +770,22 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
         const RiverCombs& one_player_comb = player_combs[i];
         while (j >= 0 && one_player_comb.rank > oppo_combs[j].rank) {
             const RiverCombs& one_oppo_comb = oppo_combs[j];
+#if TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS
+            const int oppo_reach_index = one_oppo_comb.reach_prob_index;
+            const float oppo_reach = reach_probs[oppo_reach_index];
+            losssum += oppo_reach;
+            card_losssum[one_oppo_comb.card1] += oppo_reach;
+            card_losssum[one_oppo_comb.card2] += oppo_reach;
+#else
             losssum += reach_probs[one_oppo_comb.reach_prob_index];
-            card_losssum[one_oppo_comb.private_cards.card1] += reach_probs[one_oppo_comb.reach_prob_index];
-            card_losssum[one_oppo_comb.private_cards.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+            card_losssum[one_oppo_comb.card1] += reach_probs[one_oppo_comb.reach_prob_index];
+            card_losssum[one_oppo_comb.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+#endif
             j--;
         }
         payoffs[one_player_comb.reach_prob_index] += (losssum
-                                                      - card_losssum[one_player_comb.private_cards.card1]
-                                                      - card_losssum[one_player_comb.private_cards.card2]
+                                                      - card_losssum[one_player_comb.card1]
+                                                      - card_losssum[one_player_comb.card2]
                                                       ) * lose_payoff;
     }
 
@@ -788,7 +828,11 @@ PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vec
         if(Card::boardsHasIntercept(current_board,one_player_hand.toBoardLong())){
             continue;
         }
+#if TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE
+        int oppo_same_card_ind = this->same_card_index[player][oppo][i];
+#else
         int oppo_same_card_ind = this->pcm.indPlayer2Player(player,oppo,i);
+#endif
         float plus_reach_prob;
         if(oppo_same_card_ind == -1){
             plus_reach_prob = 0;

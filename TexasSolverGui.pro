@@ -169,6 +169,7 @@ HEADERS += \
     include/tools/StreetSetting.h \
     include/tools/lookup8.h \
     include/tools/PrivateRangeConverter.h \
+    include/tools/OptimizationSwitches.h \
     include/tools/progressbar.h \
     include/runtime/PokerSolver.h \
     include/trainable/CfrPlusTrainable.h \

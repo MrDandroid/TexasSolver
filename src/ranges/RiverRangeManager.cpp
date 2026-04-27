@@ -45,7 +45,7 @@ RiverRangeManager::getRiverCombos(int player, const vector<PrivateCards> &preflo
     TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::RiverRangeBuild);
     int count = 0;
 
-    for (auto one_hand : preflopCombos) {
+    for (const PrivateCards& one_hand : preflopCombos) {
         if (!Card::boardsHasIntercept(
                 one_hand.toBoardLong(), board_long
         ))
@@ -57,7 +57,7 @@ RiverRangeManager::getRiverCombos(int player, const vector<PrivateCards> &preflo
 
     for (std::size_t hand = 0; hand < preflopCombos.size(); hand++)
     {
-        PrivateCards preflopCombo = preflopCombos[hand];
+        const PrivateCards& preflopCombo = preflopCombos[hand];
 
 
         if (Card::boardsHasIntercept(
@@ -67,7 +67,11 @@ RiverRangeManager::getRiverCombos(int player, const vector<PrivateCards> &preflo
         }
 
         int rank = this->handEvaluator->get_rank(preflopCombo.toBoardLong(),board_long);
+#if TEXASSOLVER_OPT_LIGHT_RIVER_COMBS
+        RiverCombs riverCombo = RiverCombs(preflopCombo, rank, hand);
+#else
         RiverCombs riverCombo = RiverCombs(Card::long2board(board_long),preflopCombo,rank, hand);
+#endif
         riverCombos[index++] = riverCombo;
     }
 

@@ -18,6 +18,7 @@
 #include <queue>
 #include <optional>
 #include <array>
+#include <include/tools/OptimizationSwitches.h>
 class StrategyJsonExporterV2;
 /*
 template<typename T>
@@ -152,6 +153,9 @@ private:
     int player_number;
     int iteration_number;
     PrivateCardsManager pcm;
+#if TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE
+    vector<vector<vector<int>>> same_card_index;
+#endif
     bool debug;
     int print_interval;
     string trainer;

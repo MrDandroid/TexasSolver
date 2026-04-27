@@ -78,7 +78,7 @@ QMAKE_CXXFLAGS += -fopenmp
 QMAKE_LFLAGS += -fopenmp
 }
 
-QMAKE_CXXFLAGS_RELEASE *= -O2
+QMAKE_CXXFLAGS_RELEASE *= -O3
 QMAKE_LFLAGS += -v
 
 SOURCES += \
@@ -106,7 +106,6 @@ SOURCES += \
     src/solver/BestResponse.cpp \
     src/solver/CfrSolver.cpp \
     src/solver/PCfrSolver.cpp \
-    src/solver/Solver.cpp \
     src/solver/pcfrsolver_dump_sqlite.cpp \
     src/solver/pcfrsolver_dump_stream.cpp \
     src/tools/CommandLineTool.cpp \

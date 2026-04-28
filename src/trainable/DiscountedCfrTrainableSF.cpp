@@ -2,6 +2,7 @@
 // based DiscountableCfrTrainable.h from Xuefeng Huang on 2020/1/31.
 
 #include "include/trainable/DiscountedCfrTrainableSF.h"
+#include "include/tools/OptimizationSwitches.h"
 //#define DEBUG;
 
 DiscountedCfrTrainableSF::DiscountedCfrTrainableSF(vector<PrivateCards> *privateCards,
@@ -68,7 +69,11 @@ const vector<float> DiscountedCfrTrainableSF::getcurrentStrategyNoCache() {
 void DiscountedCfrTrainableSF::fillCurrentStrategy(vector<float>& current_strategy) {
     current_strategy.resize(this->action_number * this->card_number);
     // calculate r_plus_sum on the fly, store r_plus as floats locally
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    vector<float> r_plus_sum = vector<float>(this->card_number);
+#else
     vector<float> r_plus_sum = vector<float>(this->r_plus.size());
+#endif
     fill(r_plus_sum.begin(),r_plus_sum.end(),0);
     for (int action_id = 0;action_id < action_number;action_id ++) {
         for(int private_id = 0;private_id < this->card_number;private_id ++){
@@ -88,6 +93,24 @@ void DiscountedCfrTrainableSF::fillCurrentStrategy(vector<float>& current_strate
 #ifdef DEBUG
             if(this->r_plus[index] != this->r_plus[index]) throw runtime_error("nan found");
 #endif
+        }
+    }
+}
+
+void DiscountedCfrTrainableSF::fillCurrentStrategyForAction(int action_id, vector<float>& strategy) const {
+    strategy.resize(this->card_number);
+    const float uniform_strategy = 1.0f / this->action_number;
+    const int action_offset = action_id * this->card_number;
+    for (int private_id = 0; private_id < this->card_number; private_id++) {
+        float r_plus_sum = 0.0f;
+        for (int one_action_id = 0; one_action_id < action_number; one_action_id++) {
+            int index = one_action_id * this->card_number + private_id;
+            r_plus_sum += max(float(0.0), this->r_plus[index]);
+        }
+        if(r_plus_sum != 0) {
+            strategy[private_id] = max(float(0.0), this->r_plus[action_offset + private_id]) / r_plus_sum;
+        }else{
+            strategy[private_id] = uniform_strategy;
         }
     }
 }
@@ -117,10 +140,28 @@ void DiscountedCfrTrainableSF::updateRegrets(const vector<float>& regrets, int i
     if(regrets.size() != this->action_number * this->card_number) throw runtime_error("length not match");
 #endif
 
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    static thread_local int cached_iteration_number = -1;
+    static thread_local double cached_alpha_coef = 0.0;
+    static thread_local float cached_strategy_coef = 0.0f;
+    if(cached_iteration_number != iteration_number) {
+        auto alpha_coef_calc = pow(iteration_number, this->alpha);
+        cached_alpha_coef = alpha_coef_calc / (1 + alpha_coef_calc);
+        cached_strategy_coef = pow(((float)iteration_number / (iteration_number + 1)), gamma);
+        cached_iteration_number = iteration_number;
+    }
+    const auto alpha_coef = cached_alpha_coef;
+    const float strategy_coef = cached_strategy_coef;
+#else
     auto alpha_coef = pow(iteration_number, this->alpha);
     alpha_coef = alpha_coef / (1 + alpha_coef);
+#endif
 
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    vector<float> r_plus_sum = vector<float>(this->card_number);
+#else
     vector<float> r_plus_sum = vector<float>(this->r_plus.size());
+#endif
     fill(r_plus_sum.begin(),r_plus_sum.end(),0);
     for (int action_id = 0;action_id < action_number;action_id ++) {
         for(int private_id = 0;private_id < this->card_number;private_id ++){
@@ -140,6 +181,20 @@ void DiscountedCfrTrainableSF::updateRegrets(const vector<float>& regrets, int i
         }
     }
 
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    const float uniform_strategy = 1.0f / this->action_number;
+    for (int action_id = 0;action_id < action_number;action_id ++) {
+        for(int private_id = 0;private_id < this->card_number;private_id ++) {
+            int index = action_id * this->card_number + private_id;
+            const float r_sum = r_plus_sum[private_id];
+            const float current_strategy = r_sum != 0
+                ? max(float(0.0), this->r_plus[index]) / r_sum
+                : uniform_strategy;
+            this->cum_r_plus[index] = this->cum_r_plus[index] * this->theta +
+                current_strategy * strategy_coef;// * reach_probs[private_id];
+        }
+    }
+#else
     // inline replacement to reuse r_plus_sum of
     // vector<float> current_strategy = this->getcurrentStrategyNoCache();
     vector<float> current_strategy = vector<float>(this->action_number * this->card_number);
@@ -166,6 +221,7 @@ void DiscountedCfrTrainableSF::updateRegrets(const vector<float>& regrets, int i
                 current_strategy[index] * strategy_coef;// * reach_probs[private_id];
         }
     }
+#endif
 }
 
 json DiscountedCfrTrainableSF::dump_strategy(bool with_state) {

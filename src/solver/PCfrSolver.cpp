@@ -11,6 +11,7 @@
 #include <limits>
 #include <cmath>
 #include <iomanip>
+#include <utility>
 #include <zlib.h>
 #include "include/tools/HotspotProfiler.h"
 #include "include/tools/OptimizationSwitches.h"
@@ -375,7 +376,14 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
         valid_cards.push_back(card);
     }
 
+#if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
+    #pragma omp parallel
+    {
+        vector<float> new_reach_probs(this->ranges[oppo].size());
+        #pragma omp for schedule(static)
+#else
     #pragma omp parallel for schedule(static)
+#endif
     for(std::size_t valid_ind = 0;valid_ind < valid_cards.size();valid_ind++) {
         int card = valid_cards[valid_ind];
         shared_ptr<GameTreeNode> one_child = node->getChildren();
@@ -392,10 +400,9 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
         vector<PrivateCards> &playerPrivateCard = (this->ranges[player]);
         vector<PrivateCards> &oppoPrivateCards = (this->ranges[1 - player]);
 
-
+#if !TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
         vector<float> new_reach_probs = vector<float>(oppoPrivateCards.size());
-
-
+#endif
 
 #ifdef DEBUG
         if (playerPrivateCard.size() != this->ranges[player].size()) throw runtime_error("length not match");
@@ -436,13 +443,25 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
             //TaskParams taskParams = TaskParams();
         }else {
             vector<float> child_utility = this->cfr(player, one_child, new_reach_probs, iter, new_board_long, new_deal);
+#if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
+            results[one_card->getNumberInDeckInt()] = std::move(child_utility);
+#else
             results[one_card->getNumberInDeckInt()] = child_utility;
+#endif
         }
     }
+#if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
+    }
+#endif
 
+#if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
+    vector<float> exchanged_child_utility;
+#endif
     for(std::size_t card = 0;card < node->getCards().size();card ++) {
         Card *one_card = const_cast<Card *>(&(node->getCards()[card]));
+#if !TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
         vector<float> exchanged_child_utility;
+#endif
         const vector<float>* child_utility_ptr;
         int offset = this->color_iso_offset[deal][one_card->getCardInt() % 4];
         if(offset < 0) {
@@ -518,9 +537,19 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
 
     if (node_player != player) {
         vector<float> new_reach_prob(reach_probs.size());
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+        vector<float> action_strategy(reach_probs.size());
+#endif
         for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+            trainable->fillCurrentStrategyForAction((int)action_id, action_strategy);
+#endif
             for (std::size_t hand_id = 0; hand_id < new_reach_prob.size(); hand_id++) {
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+                float strategy_prob = action_strategy[hand_id];
+#else
                 float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
+#endif
                 new_reach_prob[hand_id] = reach_probs[hand_id] * strategy_prob;
             }
             vector<float> action_utilities = this->cfr(player, children[action_id], new_reach_prob, iter,
@@ -559,11 +588,17 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
     }
 
     //#pragma omp taskwait
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+    vector<float> action_strategy(node_player_private_cards.size());
+#endif
     for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
         const vector<float>& action_utilities = results[action_id];
         if(action_utilities.empty()){
             continue;
         }
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+        trainable->fillCurrentStrategyForAction((int)action_id, action_strategy);
+#endif
 
         // cfr结果是每手牌的收益，payoffs代表的也是每手牌的收益，他们的长度理应相等
 #ifdef DEBUG
@@ -581,7 +616,11 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
 #endif
 
         for (std::size_t hand_id = 0; hand_id < action_utilities.size(); hand_id++) {
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+            float strategy_prob = action_strategy[hand_id];
+#else
             float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
+#endif
             payoffs[hand_id] += strategy_prob * action_utilities[hand_id];
         }
     }

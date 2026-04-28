@@ -19,6 +19,7 @@ public:
     virtual const vector<float> getcurrentStrategy() = 0;
     virtual void fillAverageStrategy(vector<float>& strategy) = 0;
     virtual void fillCurrentStrategy(vector<float>& strategy) = 0;
+    virtual void fillCurrentStrategyForAction(int action_id, vector<float>& strategy) const = 0;
     virtual float getCurrentStrategy(int action_id, int private_id) const = 0;
     virtual void updateRegrets(const vector<float>& regrets,int iteration_number,const vector<float>& reach_probs) = 0;
     virtual void setEv(const vector<float>& evs) = 0;

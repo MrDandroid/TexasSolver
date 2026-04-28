@@ -4,6 +4,7 @@
 
 #include "include/trainable/DiscountedCfrTrainable.h"
 #include "include/tools/HotspotProfiler.h"
+#include "include/tools/OptimizationSwitches.h"
 //#define DEBUG;
 
 DiscountedCfrTrainable::DiscountedCfrTrainable(vector<PrivateCards> *privateCards,
@@ -94,6 +95,24 @@ void DiscountedCfrTrainable::fillCurrentStrategy(vector<float>& current_strategy
     }
 }
 
+void DiscountedCfrTrainable::fillCurrentStrategyForAction(int action_id, vector<float>& strategy) const {
+    strategy.resize(this->card_number);
+    if(this->r_plus_sum.empty()){
+        fill(strategy.begin(), strategy.end(), 1.0f / this->action_number);
+        return;
+    }
+
+    const int action_offset = action_id * this->card_number;
+    for (int private_id = 0; private_id < this->card_number; private_id++) {
+        const float r_sum = this->r_plus_sum[private_id];
+        if(r_sum != 0) {
+            strategy[private_id] = max(float(0.0), this->r_plus[action_offset + private_id]) / r_sum;
+        }else{
+            strategy[private_id] = 1.0f / this->action_number;
+        }
+    }
+}
+
 float DiscountedCfrTrainable::getCurrentStrategy(int action_id, int private_id) const {
     if(this->r_plus_sum.empty()){
         return 1.0f / this->action_number;
@@ -118,8 +137,22 @@ void DiscountedCfrTrainable::updateRegrets(const vector<float>& regrets, int ite
     if(regrets.size() != this->action_number * this->card_number) throw runtime_error("length not match");
 #endif
 
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    static thread_local int cached_iteration_number = -1;
+    static thread_local double cached_alpha_coef = 0.0;
+    static thread_local float cached_strategy_coef = 0.0f;
+    if(cached_iteration_number != iteration_number) {
+        auto alpha_coef_calc = pow(iteration_number, this->alpha);
+        cached_alpha_coef = alpha_coef_calc / (1 + alpha_coef_calc);
+        cached_strategy_coef = pow(((float)iteration_number / (iteration_number + 1)), gamma);
+        cached_iteration_number = iteration_number;
+    }
+    const auto alpha_coef = cached_alpha_coef;
+    const float strategy_coef = cached_strategy_coef;
+#else
     auto alpha_coef = pow(iteration_number, this->alpha);
     alpha_coef = alpha_coef / (1 + alpha_coef);
+#endif
 
     //Arrays.fill(this.r_plus_sum,0);
     fill(r_plus_sum.begin(),r_plus_sum.end(),0);
@@ -144,6 +177,20 @@ void DiscountedCfrTrainable::updateRegrets(const vector<float>& regrets, int ite
             // this.cum_r_plus_sum[private_id] += this.cum_r_plus[index];
         }
     }
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    const float uniform_strategy = 1.0f / this->action_number;
+    for (int action_id = 0;action_id < action_number;action_id ++) {
+        for(int private_id = 0;private_id < this->card_number;private_id ++) {
+            int index = action_id * this->card_number + private_id;
+            const float r_sum = this->r_plus_sum[private_id];
+            const float current_strategy = r_sum != 0
+                ? max(float(0.0), this->r_plus[index]) / r_sum
+                : uniform_strategy;
+            this->cum_r_plus[index] *= this->theta;
+            this->cum_r_plus[index] += current_strategy * strategy_coef;// * reach_probs[private_id];
+        }
+    }
+#else
     vector<float> current_strategy = this->getcurrentStrategyNoCache();
     float strategy_coef = pow(((float)iteration_number / (iteration_number + 1)),gamma);
     for (int action_id = 0;action_id < action_number;action_id ++) {
@@ -154,6 +201,7 @@ void DiscountedCfrTrainable::updateRegrets(const vector<float>& regrets, int ite
             //this->cum_r_plus_sum[private_id] += this->cum_r_plus[index] ;
         }
     }
+#endif
 }
 
 json DiscountedCfrTrainable::dump_strategy(bool with_state) {

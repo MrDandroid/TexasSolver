@@ -10,6 +10,9 @@ param(
     [switch]$DisableLightRiverCombs,
     [switch]$DisableShowdownFastFields,
     [switch]$DisableTerminalSameCardCache,
+    [switch]$DisableActionStrategyBuffer,
+    [switch]$DisableUpdateRegretsInline,
+    [switch]$DisableChanceReachBufferReuse,
     [switch]$OptimizeO2,
     [string]$OutputDir = ""
 )
@@ -65,10 +68,16 @@ $optimizationLevel = if ($OptimizeO2) { "-O2" } else { "-O3" }
 $optLightRiverCombs = if ($DisableLightRiverCombs) { 0 } else { 1 }
 $optShowdownFastFields = if ($DisableShowdownFastFields) { 0 } else { 1 }
 $optTerminalSameCardCache = if ($DisableTerminalSameCardCache) { 0 } else { 1 }
+$optActionStrategyBuffer = if ($DisableActionStrategyBuffer) { 0 } else { 1 }
+$optUpdateRegretsInline = if ($DisableUpdateRegretsInline) { 0 } else { 1 }
+$optChanceReachBufferReuse = if ($DisableChanceReachBufferReuse) { 0 } else { 1 }
 $optimizationDefines = @(
     "TEXASSOLVER_OPT_LIGHT_RIVER_COMBS=$optLightRiverCombs",
     "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
-    "TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE=$optTerminalSameCardCache"
+    "TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE=$optTerminalSameCardCache",
+    "TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER=$optActionStrategyBuffer",
+    "TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE=$optUpdateRegretsInline",
+    "TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE=$optChanceReachBufferReuse"
 )
 
 $buildName = "Desktop_Qt_5_15_2_MinGW_64_bit-release"
@@ -86,6 +95,15 @@ if ($DisableShowdownFastFields) {
 }
 if ($DisableTerminalSameCardCache) {
     $buildName += "-no-terminal-same-card-cache"
+}
+if ($DisableActionStrategyBuffer) {
+    $buildName += "-no-action-strategy-buffer"
+}
+if ($DisableUpdateRegretsInline) {
+    $buildName += "-no-update-regrets-inline"
+}
+if ($DisableChanceReachBufferReuse) {
+    $buildName += "-no-chance-reach-buffer-reuse"
 }
 $buildDir = Join-Path $repoRoot "build\$buildName"
 $releaseDir = Join-Path $buildDir "release"
@@ -264,6 +282,9 @@ $summary = [ordered]@{
         light_river_combs = [bool]$optLightRiverCombs
         showdown_fast_fields = [bool]$optShowdownFastFields
         terminal_same_card_cache = [bool]$optTerminalSameCardCache
+        action_strategy_buffer = [bool]$optActionStrategyBuffer
+        update_regrets_inline = [bool]$optUpdateRegretsInline
+        chance_reach_buffer_reuse = [bool]$optChanceReachBufferReuse
     }
     timing_ms = $timing
     final_iteration = if ($finalIterText) { [int]$finalIterText } else { $null }
@@ -365,7 +386,7 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

@@ -95,6 +95,23 @@ void CfrPlusTrainable::fillCurrentStrategy(vector<float>& strategy) {
     }
 }
 
+void CfrPlusTrainable::fillCurrentStrategyForAction(int action_id, vector<float>& strategy) const {
+    strategy.resize(this->card_number);
+    if(this->r_plus_sum.empty()){
+        fill(strategy.begin(), strategy.end(), 1.0f / this->action_number);
+        return;
+    }
+
+    const int action_offset = action_id * this->card_number;
+    for (int private_id = 0; private_id < this->card_number; private_id++) {
+        if(this->r_plus_sum[private_id] != 0) {
+            strategy[private_id] = this->r_plus[action_offset + private_id] / this->r_plus_sum[private_id];
+        }else{
+            strategy[private_id] = 1.0f / this->action_number;
+        }
+    }
+}
+
 float CfrPlusTrainable::getCurrentStrategy(int action_id, int private_id) const {
     if(this->r_plus_sum.empty()){
         return 1.0f / this->action_number;

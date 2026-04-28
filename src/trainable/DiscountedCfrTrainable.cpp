@@ -204,6 +204,88 @@ void DiscountedCfrTrainable::updateRegrets(const vector<float>& regrets, int ite
 #endif
 }
 
+void DiscountedCfrTrainable::updateRegretsFromActionUtilities(const vector<vector<float>>& action_utilities,
+                                                              const vector<float>& payoffs,
+                                                              int iteration_number,
+                                                              const vector<float>& reach_probs) {
+    TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::DiscountedUpdateRegrets);
+
+#ifdef DEBUG
+    if(action_utilities.size() != this->action_number) throw runtime_error("action length not match");
+    if(payoffs.size() != this->card_number) throw runtime_error("payoff length not match");
+#endif
+
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    static thread_local int cached_iteration_number = -1;
+    static thread_local double cached_alpha_coef = 0.0;
+    static thread_local float cached_strategy_coef = 0.0f;
+    if(cached_iteration_number != iteration_number) {
+        auto alpha_coef_calc = pow(iteration_number, this->alpha);
+        cached_alpha_coef = alpha_coef_calc / (1 + alpha_coef_calc);
+        cached_strategy_coef = pow(((float)iteration_number / (iteration_number + 1)), gamma);
+        cached_iteration_number = iteration_number;
+    }
+    const auto alpha_coef = cached_alpha_coef;
+    const float strategy_coef = cached_strategy_coef;
+#else
+    auto alpha_coef = pow(iteration_number, this->alpha);
+    alpha_coef = alpha_coef / (1 + alpha_coef);
+#endif
+
+    //Arrays.fill(this.r_plus_sum,0);
+    fill(r_plus_sum.begin(),r_plus_sum.end(),0);
+    //fill(cum_r_plus_sum.begin(),cum_r_plus_sum.end(),0);
+    for (int action_id = 0;action_id < action_number;action_id ++) {
+        const vector<float>& one_action_utilities = action_utilities[action_id];
+#ifdef DEBUG
+        if(one_action_utilities.size() != this->card_number) throw runtime_error("utility length not match");
+#endif
+        for(int private_id = 0;private_id < this->card_number;private_id ++){
+            int index = action_id * this->card_number + private_id;
+            float one_reg = one_action_utilities[private_id] - payoffs[private_id];
+
+            // Update R+.
+            this->r_plus[index] = one_reg + this->r_plus[index];
+            if(this->r_plus[index] > 0){
+                this->r_plus[index] *= alpha_coef;
+            }else{
+                this->r_plus[index] *= beta;
+            }
+
+            this->r_plus_sum[private_id] += max(float(0.0),this->r_plus[index]);
+
+            // Update cumulative strategy.
+            // this.cum_r_plus[index] += this.r_plus[index] * iteration_number;
+            // this.cum_r_plus_sum[private_id] += this->cum_r_plus[index];
+        }
+    }
+#if TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE
+    const float uniform_strategy = 1.0f / this->action_number;
+    for (int action_id = 0;action_id < action_number;action_id ++) {
+        for(int private_id = 0;private_id < this->card_number;private_id ++) {
+            int index = action_id * this->card_number + private_id;
+            const float r_sum = this->r_plus_sum[private_id];
+            const float current_strategy = r_sum != 0
+                ? max(float(0.0), this->r_plus[index]) / r_sum
+                : uniform_strategy;
+            this->cum_r_plus[index] *= this->theta;
+            this->cum_r_plus[index] += current_strategy * strategy_coef;// * reach_probs[private_id];
+        }
+    }
+#else
+    vector<float> current_strategy = this->getcurrentStrategyNoCache();
+    float strategy_coef = pow(((float)iteration_number / (iteration_number + 1)),gamma);
+    for (int action_id = 0;action_id < action_number;action_id ++) {
+        for(int private_id = 0;private_id < this->card_number;private_id ++) {
+            int index = action_id * this->card_number + private_id;
+            this->cum_r_plus[index] *= this->theta;
+            this->cum_r_plus[index] += current_strategy[index] * strategy_coef;// * reach_probs[private_id];
+            //this->cum_r_plus_sum[private_id] += this->cum_r_plus[index] ;
+        }
+    }
+#endif
+}
+
 json DiscountedCfrTrainable::dump_strategy(bool with_state) {
     if(with_state) throw runtime_error("state storage not implemented");
 

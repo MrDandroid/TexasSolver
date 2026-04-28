@@ -646,41 +646,62 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
     }
 
 
-        vector<float> regrets(actions.size() * node_player_private_cards.size());
-        for (std::size_t i = 0; i < node_player_private_cards.size(); i++) {
-            //boolean regrets_all_negative = true;
-            for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
-                // 下面是regret计算的伪代码
-                // regret[action_id * player_hc: (action_id + 1) * player_hc]
-                //     = all_action_utilitiy[action_id] - payoff[action_id]
-                regrets[action_id * node_player_private_cards.size() + i] =
-                        results[action_id][i] - payoffs[i];
+#if TEXASSOLVER_OPT_ACTION_REGRET_DIRECT_UPDATE
+    if(!this->distributing_task && !this->collecting_statics) {
+        if (iter > this->warmup) {
+            trainable->updateRegretsFromActionUtilities(results, payoffs, iter + 1, reach_probs);
+        } else {
+            // iter == this->warmup
+            vector<int> deals = this->getAllAbstractionDeal(deal);
+            shared_ptr<Trainable> standard_trainable = nullptr;
+            for (int one_deal : deals) {
+                shared_ptr<Trainable> one_trainable = node->getTrainable(one_deal,true,this->use_halffloats);
+                if (standard_trainable == nullptr) {
+                    one_trainable->updateRegretsFromActionUtilities(results, payoffs, iter + 1, reach_probs);
+                    standard_trainable = one_trainable;
+                } else {
+                    one_trainable->copyStrategy(standard_trainable);
+                }
             }
         }
+    }
+#else
+    vector<float> regrets(actions.size() * node_player_private_cards.size());
+    for (std::size_t i = 0; i < node_player_private_cards.size(); i++) {
+        //boolean regrets_all_negative = true;
+        for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
+            // 下面是regret计算的伪代码
+            // regret[action_id * player_hc: (action_id + 1) * player_hc]
+            //     = all_action_utilitiy[action_id] - payoff[action_id]
+            regrets[action_id * node_player_private_cards.size() + i] =
+                    results[action_id][i] - payoffs[i];
+        }
+    }
 
-        if(!this->distributing_task && !this->collecting_statics) {
-            if (iter > this->warmup) {
-                trainable->updateRegrets(regrets, iter + 1, reach_probs);
-            }/*else if(iter < this->warmup){
+    if(!this->distributing_task && !this->collecting_statics) {
+        if (iter > this->warmup) {
+            trainable->updateRegrets(regrets, iter + 1, reach_probs);
+        }/*else if(iter < this->warmup){
             vector<int> deals = this->getAllAbstractionDeal(deal);
             shared_ptr<Trainable> one_trainable = node->getTrainable(deals[0]);
             one_trainable->updateRegrets(regrets, iter + 1, reach_probs[player]);
             }*/
-            else {
-                // iter == this->warmup
-                vector<int> deals = this->getAllAbstractionDeal(deal);
-                shared_ptr<Trainable> standard_trainable = nullptr;
-                for (int one_deal : deals) {
-                    shared_ptr<Trainable> one_trainable = node->getTrainable(one_deal,true,this->use_halffloats);
-                    if (standard_trainable == nullptr) {
-                        one_trainable->updateRegrets(regrets, iter + 1, reach_probs);
-                        standard_trainable = one_trainable;
-                    } else {
-                        one_trainable->copyStrategy(standard_trainable);
-                    }
+        else {
+            // iter == this->warmup
+            vector<int> deals = this->getAllAbstractionDeal(deal);
+            shared_ptr<Trainable> standard_trainable = nullptr;
+            for (int one_deal : deals) {
+                shared_ptr<Trainable> one_trainable = node->getTrainable(one_deal,true,this->use_halffloats);
+                if (standard_trainable == nullptr) {
+                    one_trainable->updateRegrets(regrets, iter + 1, reach_probs);
+                    standard_trainable = one_trainable;
+                } else {
+                    one_trainable->copyStrategy(standard_trainable);
                 }
             }
         }
+    }
+#endif
 
         if(this->collecting_statics || (iter % this->print_interval == 0)){
             float oppo_sum = 0;

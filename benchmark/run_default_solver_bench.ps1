@@ -14,6 +14,7 @@ param(
     [switch]$DisableUpdateRegretsInline,
     [switch]$DisableChanceReachBufferReuse,
     [switch]$DisableFastCardAccessors,
+    [switch]$DisableActionRegretDirectUpdate,
     [switch]$OptimizeO2,
     [string]$OutputDir = ""
 )
@@ -73,6 +74,7 @@ $optActionStrategyBuffer = if ($DisableActionStrategyBuffer) { 0 } else { 1 }
 $optUpdateRegretsInline = if ($DisableUpdateRegretsInline) { 0 } else { 1 }
 $optChanceReachBufferReuse = if ($DisableChanceReachBufferReuse) { 0 } else { 1 }
 $optFastCardAccessors = if ($DisableFastCardAccessors) { 0 } else { 1 }
+$optActionRegretDirectUpdate = if ($DisableActionRegretDirectUpdate) { 0 } else { 1 }
 $optimizationDefines = @(
     "TEXASSOLVER_OPT_LIGHT_RIVER_COMBS=$optLightRiverCombs",
     "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
@@ -80,7 +82,8 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER=$optActionStrategyBuffer",
     "TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE=$optUpdateRegretsInline",
     "TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE=$optChanceReachBufferReuse",
-    "TEXASSOLVER_OPT_FAST_CARD_ACCESSORS=$optFastCardAccessors"
+    "TEXASSOLVER_OPT_FAST_CARD_ACCESSORS=$optFastCardAccessors",
+    "TEXASSOLVER_OPT_ACTION_REGRET_DIRECT_UPDATE=$optActionRegretDirectUpdate"
 )
 
 $buildName = "Desktop_Qt_5_15_2_MinGW_64_bit-release"
@@ -110,6 +113,9 @@ if ($DisableChanceReachBufferReuse) {
 }
 if ($DisableFastCardAccessors) {
     $buildName += "-no-fast-card-accessors"
+}
+if ($DisableActionRegretDirectUpdate) {
+    $buildName += "-no-action-regret-direct-update"
 }
 $buildDir = Join-Path $repoRoot "build\$buildName"
 $releaseDir = Join-Path $buildDir "release"
@@ -292,6 +298,7 @@ $summary = [ordered]@{
         update_regrets_inline = [bool]$optUpdateRegretsInline
         chance_reach_buffer_reuse = [bool]$optChanceReachBufferReuse
         fast_card_accessors = [bool]$optFastCardAccessors
+        action_regret_direct_update = [bool]$optActionRegretDirectUpdate
     }
     timing_ms = $timing
     final_iteration = if ($finalIterText) { [int]$finalIterText } else { $null }
@@ -393,7 +400,7 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

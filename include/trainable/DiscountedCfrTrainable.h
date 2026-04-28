@@ -46,6 +46,11 @@ public:
 
     void updateRegrets(const vector<float>& regrets, int iteration_number, const vector<float>& reach_probs) override;
 
+    void updateRegretsFromActionUtilities(const vector<vector<float>>& action_utilities,
+                                          const vector<float>& payoffs,
+                                          int iteration_number,
+                                          const vector<float>& reach_probs) override;
+
     void setEv(const vector<float>& evs) override;
 
     void copyStrategy(shared_ptr<Trainable> other_trainable);

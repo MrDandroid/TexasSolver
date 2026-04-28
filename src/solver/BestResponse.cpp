@@ -124,7 +124,11 @@ BestResponse::chanceBestReponse(shared_ptr<ChanceNode> node, int player,const ve
 
     int card_num = node->getCards().size();
     // 可能的发牌情况,2代表每个人的holecard是两张
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+    int possible_deals = (int)node->getCards().size() - Card::boardLongCardCount(current_board) - 2;
+#else
     int possible_deals = node->getCards().size() - Card::long2board(current_board).size() - 2;
+#endif
 
     vector<float> chance_utility = vector<float>(reach_probs[player].size());
     fill(chance_utility.begin(),chance_utility.end(),0);
@@ -138,7 +142,11 @@ BestResponse::chanceBestReponse(shared_ptr<ChanceNode> node, int player,const ve
     for(std::size_t card = 0;card < node->getCards().size();card ++) {
         shared_ptr<GameTreeNode> one_child = node->getChildren();
         Card one_card = node->getCards()[card];
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+        uint64_t card_long = Card::boardInt2longUnchecked(one_card.getCardInt());
+#else
         uint64_t card_long = Card::boardInt2long(one_card.getCardInt());
+#endif
 
         // 不可能发出和board重复的牌，对吧
         if (Card::boardsHasIntercept(card_long, current_board)) continue;

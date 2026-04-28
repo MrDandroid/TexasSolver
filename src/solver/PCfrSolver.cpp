@@ -312,7 +312,11 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
     int card_num = node->getCards().size();
     if(card_num % 4 != 0) throw runtime_error("card num cannot round 4");
     // 可能的发牌情况,2代表每个人的holecard是两张
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+    int possible_deals = (int)node->getCards().size() - Card::boardLongCardCount(current_board) - 2;
+#else
     int possible_deals = node->getCards().size() - Card::long2board(current_board).size() - 2;
+#endif
     int oppo = 1 - player;
 
     //vector<float> chance_utility(reach_probs[player].size());
@@ -345,15 +349,23 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
                 int i_card = card_base * 4 + i;
                 if (i == cardr) {
                     Card *one_card = const_cast<Card *>(&(node->getCards()[i_card]));
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+                    uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
+#else
                     uint64_t card_long = Card::boardInt2long(
                             one_card->getCardInt());
+#endif
                     if (!Card::boardsHasIntercept(card_long, current_board)) {
                         multiplier_num += 1;
                     }
                 } else {
                     Card *one_card = const_cast<Card *>(&(node->getCards()[i_card]));
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+                    uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
+#else
                     uint64_t card_long = Card::boardInt2long(
                             one_card->getCardInt());
+#endif
                     if (!Card::boardsHasIntercept(card_long, current_board)) {
                         multiplier_num += 1;
                     }
@@ -369,7 +381,11 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
     for(std::size_t card = 0;card < node->getCards().size();card ++) {
         shared_ptr<GameTreeNode> one_child = node->getChildren();
         Card *one_card = const_cast<Card *>(&(node->getCards()[card]));
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+        uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
+#else
         uint64_t card_long = Card::boardInt2long(one_card->getCardInt());//Card::boardCards2long(new Card[]{one_card});
+#endif
         if (Card::boardsHasIntercept(card_long, current_board)) continue;
         if (iter <= this->warmup && multiplier[card] == 0) continue;
         if (this->color_iso_offset[deal][one_card->getCardInt() % 4] < 0) continue;
@@ -388,7 +404,11 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
         int card = valid_cards[valid_ind];
         shared_ptr<GameTreeNode> one_child = node->getChildren();
         Card *one_card = const_cast<Card *>(&(node->getCards()[card]));
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+        uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
+#else
         uint64_t card_long = Card::boardInt2long(one_card->getCardInt());//Card::boardCards2long(new Card[]{one_card});
+#endif
 
         uint64_t new_board_long = current_board | card_long;
         if (this->monteCarolAlg == MonteCarolAlg::PUBLIC) {

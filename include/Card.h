@@ -8,6 +8,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include "include/tools/OptimizationSwitches.h"
 #include "include/tools/tinyformat.h"
 #include <QString>
 
@@ -43,6 +44,25 @@ public:
     static inline bool boardsHasIntercept(uint64_t board1, uint64_t board2) {
         return ((board1 & board2) != 0);
     };
+
+#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
+    static inline uint64_t boardInt2longUnchecked(int board) {
+        return (uint64_t(1) << board);
+    }
+
+    static inline int boardLongCardCount(uint64_t board_long) {
+#if defined(__GNUC__) || defined(__clang__)
+        return __builtin_popcountll(board_long);
+#else
+        int count = 0;
+        while (board_long != 0) {
+            count += (int)(board_long & uint64_t(1));
+            board_long >>= 1;
+        }
+        return count;
+#endif
+    }
+#endif
 
     static uint64_t   boardInts2long(const vector<int>& board);
     static uint64_t   boardInt2long(int board);

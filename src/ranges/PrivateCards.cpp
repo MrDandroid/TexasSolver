@@ -21,10 +21,12 @@ PrivateCards::PrivateCards(int card1, int card2, float weight) {
     this->board_long = Card::boardInts2long(this->card_vec);
 }
 
+#if !TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
 uint64_t PrivateCards::toBoardLong() const {
     return this->board_long;
     //return Card::boardInts2long(this->card_vec);
 }
+#endif
 
 int PrivateCards::hashCode() {
     return this->hash_code;

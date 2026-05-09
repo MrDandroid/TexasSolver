@@ -65,7 +65,9 @@ public:
         float accuracy,
         bool use_isomorphism,
         int use_halffloats,
-        int threads
+        int threads,
+        int exploitability_interval = -1,
+        bool collect_evs = true
         );
 
     void stop();

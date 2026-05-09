@@ -15,7 +15,15 @@ param(
     [switch]$DisableChanceReachBufferReuse,
     [switch]$DisableFastCardAccessors,
     [switch]$DisableActionRegretDirectUpdate,
+    [switch]$DisableRiverCanonicalRankCache,
+    [switch]$DisableRiverLazyCache,
+    [switch]$DisableRiverResultCache,
+    [switch]$DisableCfrOutBuffer,
     [switch]$OptimizeO2,
+    [switch]$IsoPotentialOnly,
+    [int]$ExploitabilityInterval = -1,
+    [switch]$DisableEvStats,
+    [string]$ParameterFile = "",
     [string]$OutputDir = ""
 )
 
@@ -58,6 +66,9 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
 }
 $OutputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDir)
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+if ($IsoPotentialOnly) {
+    $ExportBin = $false
+}
 
 $qtRoot = if ($env:QT_ROOT) { $env:QT_ROOT } else { "D:\Qt\5.15.2\mingw81_64" }
 $mingwRoot = if ($env:MINGW_ROOT) { $env:MINGW_ROOT } else { "D:\Qt\Tools\mingw810_64" }
@@ -75,6 +86,10 @@ $optUpdateRegretsInline = if ($DisableUpdateRegretsInline) { 0 } else { 1 }
 $optChanceReachBufferReuse = if ($DisableChanceReachBufferReuse) { 0 } else { 1 }
 $optFastCardAccessors = if ($DisableFastCardAccessors) { 0 } else { 1 }
 $optActionRegretDirectUpdate = if ($DisableActionRegretDirectUpdate) { 0 } else { 1 }
+$optRiverCanonicalRankCache = if ($DisableRiverCanonicalRankCache) { 0 } else { 1 }
+$optRiverLazyCache = if ($DisableRiverLazyCache) { 0 } else { 1 }
+$optRiverResultCache = if ($DisableRiverResultCache) { 0 } else { 1 }
+$optCfrOutBuffer = if ($DisableCfrOutBuffer) { 0 } else { 1 }
 $optimizationDefines = @(
     "TEXASSOLVER_OPT_LIGHT_RIVER_COMBS=$optLightRiverCombs",
     "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
@@ -83,7 +98,11 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE=$optUpdateRegretsInline",
     "TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE=$optChanceReachBufferReuse",
     "TEXASSOLVER_OPT_FAST_CARD_ACCESSORS=$optFastCardAccessors",
-    "TEXASSOLVER_OPT_ACTION_REGRET_DIRECT_UPDATE=$optActionRegretDirectUpdate"
+    "TEXASSOLVER_OPT_ACTION_REGRET_DIRECT_UPDATE=$optActionRegretDirectUpdate",
+    "TEXASSOLVER_OPT_RIVER_CANONICAL_RANK_CACHE=$optRiverCanonicalRankCache",
+    "TEXASSOLVER_OPT_RIVER_LAZY_CACHE=$optRiverLazyCache",
+    "TEXASSOLVER_OPT_RIVER_RESULT_CACHE=$optRiverResultCache",
+    "TEXASSOLVER_OPT_CFR_OUT_BUFFER=$optCfrOutBuffer"
 )
 
 $buildName = "Desktop_Qt_5_15_2_MinGW_64_bit-release"
@@ -116,6 +135,18 @@ if ($DisableFastCardAccessors) {
 }
 if ($DisableActionRegretDirectUpdate) {
     $buildName += "-no-action-regret-direct-update"
+}
+if ($DisableRiverCanonicalRankCache) {
+    $buildName += "-no-river-canonical-rank-cache"
+}
+if ($DisableRiverLazyCache) {
+    $buildName += "-no-river-lazy-cache"
+}
+if ($DisableRiverResultCache) {
+    $buildName += "-no-river-result-cache"
+}
+if ($DisableCfrOutBuffer) {
+    $buildName += "-no-cfr-out-buffer"
 }
 $buildDir = Join-Path $repoRoot "build\$buildName"
 $releaseDir = Join-Path $buildDir "release"
@@ -217,18 +248,42 @@ if ($ExportBin) {
 }
 
 $runnerArgs = @(
-    "--resource-dir", (Join-Path $repoRoot "resources"),
-    "--threads", "$Threads",
-    "--max-iteration", "$MaxIteration",
-    "--print-interval", "$PrintInterval",
-    "--accuracy", "$Accuracy",
-    "--dump-rounds", "$DumpRounds"
+    "--resource-dir", (Join-Path $repoRoot "resources")
 )
+if (![string]::IsNullOrWhiteSpace($ParameterFile)) {
+    $resolvedParameterFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ParameterFile)
+    $runnerArgs += @("--parameter-file", $resolvedParameterFile)
+}
+$usingParameterFile = ![string]::IsNullOrWhiteSpace($ParameterFile)
+if (!$usingParameterFile -or $PSBoundParameters.ContainsKey("Threads")) {
+    $runnerArgs += @("--threads", "$Threads")
+}
+if (!$usingParameterFile -or $PSBoundParameters.ContainsKey("MaxIteration")) {
+    $runnerArgs += @("--max-iteration", "$MaxIteration")
+}
+if (!$usingParameterFile -or $PSBoundParameters.ContainsKey("PrintInterval")) {
+    $runnerArgs += @("--print-interval", "$PrintInterval")
+}
+if (!$usingParameterFile -or $PSBoundParameters.ContainsKey("Accuracy")) {
+    $runnerArgs += @("--accuracy", "$Accuracy")
+}
+if (!$usingParameterFile -or $PSBoundParameters.ContainsKey("DumpRounds")) {
+    $runnerArgs += @("--dump-rounds", "$DumpRounds")
+}
+if ($PSBoundParameters.ContainsKey("ExploitabilityInterval")) {
+    $runnerArgs += @("--exploitability-interval", "$ExploitabilityInterval")
+}
+if ($DisableEvStats) {
+    $runnerArgs += @("--collect-evs", "false")
+}
 if ($ExportBin) {
     $runnerArgs += @("--export-bin", $binPath)
 }
 if ($ProfileHotspots) {
     $runnerArgs += @("--profile-hotspots")
+}
+if ($IsoPotentialOnly) {
+    $runnerArgs += @("--iso-potential-only")
 }
 
 $process = Start-Process -FilePath $exe `
@@ -265,6 +320,14 @@ foreach ($line in ($stdout -split '\r?\n')) {
     }
 }
 
+$isoPotential = [ordered]@{}
+foreach ($line in ($stdout -split '\r?\n')) {
+    if ($line -like "BENCH_ISO_*") {
+        $name = ($line -split ' ', 2)[0].Replace("BENCH_ISO_", "").ToLowerInvariant()
+        $isoPotential[$name] = Convert-KeyValueLine $line
+    }
+}
+
 $finalIterText = Get-LastRegexGroup $stderr "Iter:\s+(\d+)"
 $finalExploitText = Get-LastRegexGroup $stderr "Total exploitability\s+([-+0-9.]+)\s+precent"
 $finalSolverTimeText = Get-LastRegexGroup $stderr "time used:\s+([-+0-9.]+)\s+second"
@@ -290,6 +353,7 @@ $summary = [ordered]@{
     runner = $source
     config = $config
     compiler_optimization = $optimizationLevel
+    iso_potential_only = [bool]$IsoPotentialOnly
     optimization_switches = [ordered]@{
         light_river_combs = [bool]$optLightRiverCombs
         showdown_fast_fields = [bool]$optShowdownFastFields
@@ -299,12 +363,17 @@ $summary = [ordered]@{
         chance_reach_buffer_reuse = [bool]$optChanceReachBufferReuse
         fast_card_accessors = [bool]$optFastCardAccessors
         action_regret_direct_update = [bool]$optActionRegretDirectUpdate
+        river_canonical_rank_cache = [bool]$optRiverCanonicalRankCache
+        river_lazy_cache = [bool]$optRiverLazyCache
+        river_result_cache = [bool]$optRiverResultCache
+        cfr_out_buffer = [bool]$optCfrOutBuffer
     }
     timing_ms = $timing
     final_iteration = if ($finalIterText) { [int]$finalIterText } else { $null }
     final_exploitability_percent = if ($finalExploitText) { [double]$finalExploitText } else { $null }
     final_solver_log_time_seconds = if ($finalSolverTimeText) { [double]$finalSolverTimeText } else { $null }
     hotspots = $hotspots
+    iso_potential = $isoPotential
     output_hashes = $hashes
     stdout_log = $stdoutLog
     stderr_log = $stderrLog
@@ -400,11 +469,16 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache cfr_out_buffer=$optCfrOutBuffer"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"
 Write-Host "BENCH_FINAL_EXPLOITABILITY_PERCENT $($summary.final_exploitability_percent)"
+foreach ($line in ($stdout -split '\r?\n')) {
+    if ($line -like "BENCH_ISO_*") {
+        Write-Host $line
+    }
+}
 foreach ($entry in $hashes) {
     Write-Host "BENCH_HASH $($entry.file) $($entry.length) $($entry.sha256)"
 }

@@ -72,7 +72,7 @@ PCfrSolver::~PCfrSolver(){
 
 PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, vector<PrivateCards> range2,
                      vector<int> initial_board, shared_ptr<Compairer> compairer, Deck deck, int iteration_number, bool debug,
-                     int print_interval, string logfile, string trainer, Solver::MonteCarolAlg monteCarolAlg,int warmup,float accuracy,bool use_isomorphism,int use_halffloats,int num_threads) :Solver(tree){
+                     int print_interval, string logfile, string trainer, Solver::MonteCarolAlg monteCarolAlg,int warmup,float accuracy,bool use_isomorphism,int use_halffloats,int num_threads,int exploitability_interval,bool collect_evs) :Solver(tree){
     this->initial_board = initial_board;
     this->initial_board_long = Card::boardInts2long(initial_board);
     this->logfile = logfile;
@@ -104,6 +104,9 @@ PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, v
     this->use_halffloats = use_halffloats;
 
     this->rrm = RiverRangeManager(compairer);
+#if !TEXASSOLVER_OPT_RIVER_LAZY_CACHE
+    this->rrm.preloadRiverCombos(this->ranges[0], this->ranges[1], this->deck.getCards(), this->initial_board_long);
+#endif
     this->iteration_number = iteration_number;
 
     vector<vector<PrivateCards>> private_cards(this->player_number);
@@ -124,6 +127,8 @@ PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, v
 #endif
     this->debug = debug;
     this->print_interval = print_interval;
+    this->exploitability_interval = exploitability_interval < 0 ? print_interval : exploitability_interval;
+    this->collect_evs = collect_evs;
     this->monteCarolAlg = monteCarolAlg;
     this->accuracy = accuracy;
     if(num_threads == -1){
@@ -284,6 +289,11 @@ vector<int> PCfrSolver::getAllAbstractionDeal(int deal){
 
 vector<float> PCfrSolver::cfr(int player, shared_ptr<GameTreeNode> node, const vector<float> &reach_probs, int iter,
                                     uint64_t current_board,int deal) {
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+    vector<float> out;
+    this->cfrInto(player, node, reach_probs, iter, current_board, deal, out);
+    return out;
+#else
     switch(node->getType()) {
         case GameTreeNode::ACTION: {
             shared_ptr<ActionNode> action_node = std::dynamic_pointer_cast<ActionNode>(node);
@@ -300,11 +310,43 @@ vector<float> PCfrSolver::cfr(int player, shared_ptr<GameTreeNode> node, const v
         }default:
             throw runtime_error("node type unknown");
     }
+#endif
+}
+
+void PCfrSolver::cfrInto(int player, const shared_ptr<GameTreeNode>& node, const vector<float> &reach_probs, int iter,
+                                    uint64_t current_board,int deal, vector<float>& out) {
+    switch(node->getType()) {
+        case GameTreeNode::ACTION: {
+            shared_ptr<ActionNode> action_node = std::dynamic_pointer_cast<ActionNode>(node);
+            this->actionUtilityInto(player, action_node, reach_probs, iter, current_board,deal, out);
+            return;
+        }case GameTreeNode::SHOWDOWN: {
+            shared_ptr<ShowdownNode> showdown_node = std::dynamic_pointer_cast<ShowdownNode>(node);
+            this->showdownUtilityInto(player, showdown_node, reach_probs, iter, current_board,deal, out);
+            return;
+        }case GameTreeNode::TERMINAL: {
+            shared_ptr<TerminalNode> terminal_node = std::dynamic_pointer_cast<TerminalNode>(node);
+            this->terminalUtilityInto(player, terminal_node, reach_probs, iter, current_board,deal, out);
+            return;
+        }case GameTreeNode::CHANCE: {
+            shared_ptr<ChanceNode> chance_node = std::dynamic_pointer_cast<ChanceNode>(node);
+            this->chanceUtilityInto(player, chance_node, reach_probs, iter, current_board,deal, out);
+            return;
+        }default:
+            throw runtime_error("node type unknown");
+    }
 }
 
 vector<float>
 PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<float> &reach_probs, int iter,
                          uint64_t current_board,int deal) {
+    vector<float> out;
+    this->chanceUtilityInto(player, node, reach_probs, iter, current_board, deal, out);
+    return out;
+}
+
+void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& node, const vector<float> &reach_probs, int iter,
+                         uint64_t current_board,int deal, vector<float>& chance_utility) {
     TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrChanceUtility);
     vector<Card>& cards = this->deck.getCards();
     //float[] cardWeights = getCardsWeights(player,reach_probs[1 - player],current_board);
@@ -320,8 +362,7 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
     int oppo = 1 - player;
 
     //vector<float> chance_utility(reach_probs[player].size());
-    vector<float> chance_utility = vector<float>(this->ranges[player].size());
-    fill(chance_utility.begin(),chance_utility.end(),0);
+    chance_utility.assign(this->ranges[player].size(), 0.0f);
 
     int random_deal = 0;
     if(this->monteCarolAlg==MonteCarolAlg::PUBLIC) {
@@ -462,11 +503,16 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
             results[one_card->getNumberInDeckInt()] = vector<float>(this->ranges[player].size());
             //TaskParams taskParams = TaskParams();
         }else {
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+            vector<float>& child_utility = results[one_card->getNumberInDeckInt()];
+            this->cfrInto(player, one_child, new_reach_probs, iter, new_board_long, new_deal, child_utility);
+#else
             vector<float> child_utility = this->cfr(player, one_child, new_reach_probs, iter, new_board_long, new_deal);
 #if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
             results[one_card->getNumberInDeckInt()] = std::move(child_utility);
 #else
             results[one_card->getNumberInDeckInt()] = child_utility;
+#endif
 #endif
         }
     }
@@ -520,18 +566,24 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
         throw runtime_error("size problems");
     }
 #endif
-    return chance_utility;
+    return;
 }
 
 vector<float>
 PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<float> &reach_probs, int iter,
                          uint64_t current_board,int deal) {
+    vector<float> out;
+    this->actionUtilityInto(player, node, reach_probs, iter, current_board, deal, out);
+    return out;
+}
+
+void PCfrSolver::actionUtilityInto(int player, const shared_ptr<ActionNode>& node, const vector<float> &reach_probs, int iter,
+                         uint64_t current_board,int deal, vector<float>& payoffs) {
     TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionUtility);
     int oppo = 1 - player;
     const vector<PrivateCards>& node_player_private_cards = this->ranges[node->getPlayer()];
 
-    vector<float> payoffs = vector<float>(this->ranges[player].size());
-    fill(payoffs.begin(),payoffs.end(),0);
+    payoffs.assign(this->ranges[player].size(), 0.0f);
     vector<shared_ptr<GameTreeNode>>& children =  node->getChildrens();
     vector<GameActions>& actions =  node->getActions();
 
@@ -560,6 +612,9 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
 #if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
         vector<float> action_strategy(reach_probs.size());
 #endif
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+        vector<float> action_utilities;
+#endif
         for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
 #if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
             trainable->fillCurrentStrategyForAction((int)action_id, action_strategy);
@@ -572,8 +627,12 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
 #endif
                 new_reach_prob[hand_id] = reach_probs[hand_id] * strategy_prob;
             }
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+            this->cfrInto(player, children[action_id], new_reach_prob, iter, current_board, deal, action_utilities);
+#else
             vector<float> action_utilities = this->cfr(player, children[action_id], new_reach_prob, iter,
                                                        current_board,deal);
+#endif
             if(action_utilities.empty()){
                 continue;
             }
@@ -597,14 +656,18 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
                 payoffs[hand_id] += action_utilities[hand_id];
             }
         }
-        return payoffs;
+        return;
     }
 
     vector<vector<float>> results(actions.size());
     for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
         //#pragma omp task shared(results,action_id)
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+        this->cfrInto(player, children[action_id], reach_probs, iter, current_board, deal, results[action_id]);
+#else
         results[action_id] = this->cfr(player, children[action_id], reach_probs, iter,
                                        current_board,deal);
+#endif
     }
 
     //#pragma omp taskwait
@@ -703,7 +766,7 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
     }
 #endif
 
-        if(this->collecting_statics || (iter % this->print_interval == 0)){
+        if(this->collect_evs && (this->collecting_statics || (iter % this->print_interval == 0))){
             float oppo_sum = 0;
             vector<float> oppo_card_sum = vector<float> (52);
             fill(oppo_card_sum.begin(),oppo_card_sum.end(),0);
@@ -743,13 +806,20 @@ PCfrSolver::actionUtility(int player, shared_ptr<ActionNode> node, const vector<
             trainable->setEv(evs);
         }
 
-    return payoffs;
+    return;
 
 }
 
 vector<float>
 PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vector<float> &reach_probs,
                                     int iter, uint64_t current_board,int deal) {
+    vector<float> out;
+    this->showdownUtilityInto(player, node, reach_probs, iter, current_board, deal, out);
+    return out;
+}
+
+void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>& node, const vector<float> &reach_probs,
+                                    int iter, uint64_t current_board,int deal, vector<float>& payoffs) {
     TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrShowdownUtility);
 
     int oppo = 1 - player;
@@ -774,7 +844,7 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
     const vector<RiverCombs>& player_combs = this->rrm.getRiverCombos(player,player_private_cards,current_board);
     const vector<RiverCombs>& oppo_combs   = this->rrm.getRiverCombos(oppo,oppo_private_cards,current_board);
 
-    vector<float> payoffs = vector<float>(player_private_cards.size());
+    payoffs.assign(player_private_cards.size(), 0.0f);
 
     // ===== win part（保持你原有逻辑，但乘 win_payoff_adj）=====
     float winsum = 0.0f;
@@ -869,13 +939,44 @@ PCfrSolver::showdownUtility(int player, shared_ptr<ShowdownNode> node, const vec
                                                       ) * lose_payoff;
     }
 
-    return payoffs;
+    return;
 }
 
+
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
+const vector<int>& PCfrSolver::getRiverValidComboIndices(int player, uint64_t current_board) {
+    std::lock_guard<std::mutex> lock(this->river_result_cache_lock);
+    vector<vector<int>>& by_player = this->river_valid_combo_indices[current_board];
+    if (by_player.empty()) {
+        by_player.resize(this->player_number);
+    }
+
+    vector<int>& valid_indices = by_player[player];
+    if (!valid_indices.empty()) {
+        return valid_indices;
+    }
+
+    const vector<PrivateCards>& hands = this->playerHands(player);
+    valid_indices.reserve(hands.size());
+    for (std::size_t i = 0; i < hands.size(); ++i) {
+        if (!Card::boardsHasIntercept(current_board, hands[i].toBoardLong())) {
+            valid_indices.push_back(static_cast<int>(i));
+        }
+    }
+    return valid_indices;
+}
+#endif
 
 vector<float>
 PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vector<float> &reach_prob, int iter,
                            uint64_t current_board,int deal) {
+    vector<float> out;
+    this->terminalUtilityInto(player, node, reach_prob, iter, current_board, deal, out);
+    return out;
+}
+
+void PCfrSolver::terminalUtilityInto(int player, const shared_ptr<TerminalNode>& node, const vector<float> &reach_prob, int iter,
+                           uint64_t current_board,int deal, vector<float>& payoffs) {
     TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrTerminalUtility);
     float player_payoff = node->get_payoffs()[player];
 
@@ -892,26 +993,44 @@ PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vec
     const vector<PrivateCards>& player_hand = playerHands(player);
     const vector<PrivateCards>& oppo_hand = playerHands(oppo);
 
-    vector<float> payoffs = vector<float>(this->playerHands(player).size());
+    payoffs.assign(this->playerHands(player).size(), 0.0f);
 
     float oppo_sum = 0;
     std::array<float, 52> oppo_card_sum{};
 
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
+    const vector<int>& oppo_valid_indices = this->getRiverValidComboIndices(oppo, current_board);
+    for (int oppo_index : oppo_valid_indices) {
+        const PrivateCards& oppo_cards = oppo_hand[oppo_index];
+        oppo_card_sum[oppo_cards.card1] += reach_prob[oppo_index];
+        oppo_card_sum[oppo_cards.card2] += reach_prob[oppo_index];
+        oppo_sum += reach_prob[oppo_index];
+    }
+#else
     for(std::size_t i = 0;i < oppo_hand.size();i ++){
         oppo_card_sum[oppo_hand[i].card1] += reach_prob[i];
         oppo_card_sum[oppo_hand[i].card2] += reach_prob[i];
         oppo_sum += reach_prob[i];
     }
+#endif
 
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
+    const vector<int>& player_valid_indices = this->getRiverValidComboIndices(player, current_board);
+    for (int player_index : player_valid_indices) {
+        const int player_hand_index = player_index;
+        const PrivateCards& one_player_hand = player_hand[player_index];
+#else
     for(std::size_t i = 0;i < player_hand.size();i ++){
+        const int player_hand_index = static_cast<int>(i);
         const PrivateCards& one_player_hand = player_hand[i];
         if(Card::boardsHasIntercept(current_board,one_player_hand.toBoardLong())){
             continue;
         }
+#endif
 #if TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE
-        int oppo_same_card_ind = this->same_card_index[player][oppo][i];
+        int oppo_same_card_ind = this->same_card_index[player][oppo][player_hand_index];
 #else
-        int oppo_same_card_ind = this->pcm.indPlayer2Player(player,oppo,i);
+        int oppo_same_card_ind = this->pcm.indPlayer2Player(player,oppo,player_hand_index);
 #endif
         float plus_reach_prob;
         if(oppo_same_card_ind == -1){
@@ -919,14 +1038,14 @@ PCfrSolver::terminalUtility(int player, shared_ptr<TerminalNode> node, const vec
         }else{
             plus_reach_prob = reach_prob[oppo_same_card_ind];
         }
-        payoffs[i] = player_payoff * (
+        payoffs[player_hand_index] = player_payoff * (
                 oppo_sum - oppo_card_sum[one_player_hand.card1]
                 - oppo_card_sum[one_player_hand.card2]
                 + plus_reach_prob
         );
     }
 
-    return payoffs;
+    return;
 }
 
 void PCfrSolver::findGameSpecificIsomorphisms() {
@@ -1017,9 +1136,10 @@ void PCfrSolver::train() {
         this->findGameSpecificIsomorphisms();
     }
 
+    const bool exploitability_checks_enabled = this->exploitability_interval > 0;
     BestResponse br = BestResponse(player_privates,this->player_number,this->pcm,this->rrm,this->deck,this->debug,this->color_iso_offset,this->split_round,this->num_threads,this->use_halffloats);
 
-    {
+    if(exploitability_checks_enabled) {
         TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrInitialExploitability);
         br.printExploitability(tree->getRoot(), 0, tree->getRoot()->getPot(), initial_board_long);
     }
@@ -1036,30 +1156,42 @@ void PCfrSolver::train() {
         for(int i = 0;i < this->iteration_number;i++){
             for(int player_id = 0;player_id < this->player_number;player_id ++) {
                 this->round_deal = vector<int>{-1,-1,-1,-1};
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+                vector<float> root_utility;
+#endif
                 //#pragma omp parallel
                 {
                     //#pragma omp single
                     {
                         //this->distributing_task = true;
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+                        this->cfrInto(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0, root_utility);
+#else
                         cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], i, this->initial_board_long,0);
+#endif
                         //throw runtime_error("returning...");
                     }
                 }
             }
-            if( (i % this->print_interval == 0 && i != 0 && i >= this->warmup) || this->nowstop) {
+            const bool should_check_exploitability = exploitability_checks_enabled &&
+                (i % this->exploitability_interval == 0 && i != 0 && i >= this->warmup);
+            if(should_check_exploitability || this->nowstop) {
                 endtime = timeSinceEpochMillisec();
                 long time_ms = endtime - begintime;
                 qDebug().noquote() << "-------------------";
-                float expliotibility = br.printExploitability(tree->getRoot(), i + 1, tree->getRoot()->getPot(), initial_board_long);
+                float expliotibility = 0.0f;
+                if(should_check_exploitability) {
+                    expliotibility = br.printExploitability(tree->getRoot(), i + 1, tree->getRoot()->getPot(), initial_board_long);
+                }
                 qDebug().noquote() << QObject::tr("time used: ") << float(time_ms) / 1000 << QObject::tr(" second.");
-                if(!this->logfile.empty()){
+                if(should_check_exploitability && !this->logfile.empty()){
                     json jo;
                     jo["iteration"] = i;
                     jo["exploitibility"] = expliotibility;
                     jo["time_ms"] = time_ms;
                     fileWriter << jo << endl;
                 }
-                if(expliotibility <= this->accuracy){
+                if(should_check_exploitability && expliotibility <= this->accuracy){
                     break;
                 }
                 if(this->nowstop){
@@ -1071,25 +1203,38 @@ void PCfrSolver::train() {
         }
     }
 
-    qDebug().noquote() << QObject::tr("collecting statics");
-    this->collecting_statics = true;
-    {
-        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrCollectStatics);
-        for(int player_id = 0;player_id < this->player_number;player_id ++) {
-            this->round_deal = vector<int>{-1,-1,-1,-1};
-            //#pragma omp parallel
-            {
-                //#pragma omp single
+    if(this->collect_evs) {
+        qDebug().noquote() << QObject::tr("collecting statics");
+        this->collecting_statics = true;
+        {
+            TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrCollectStatics);
+            for(int player_id = 0;player_id < this->player_number;player_id ++) {
+                this->round_deal = vector<int>{-1,-1,-1,-1};
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+                vector<float> root_utility;
+#endif
+                //#pragma omp parallel
                 {
-                    //this->distributing_task = true;
-                    cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], this->iteration_number, this->initial_board_long,0);
+                    //#pragma omp single
+                    {
+                        //this->distributing_task = true;
+#if TEXASSOLVER_OPT_CFR_OUT_BUFFER
+                        this->cfrInto(player_id, this->tree->getRoot(), reach_probs[1 - player_id], this->iteration_number, this->initial_board_long,0, root_utility);
+#else
+                        cfr(player_id, this->tree->getRoot(), reach_probs[1 - player_id], this->iteration_number, this->initial_board_long,0);
+#endif
+                    }
                 }
             }
         }
+        this->collecting_statics = false;
+        this->statics_collected = true;
+        qDebug().noquote() << QObject::tr("statics collected");
+    } else {
+        this->collecting_statics = false;
+        this->statics_collected = false;
+        qDebug().noquote() << QObject::tr("EV statics skipped");
     }
-    this->collecting_statics = false;
-    this->statics_collected = true;
-    qDebug().noquote() << QObject::tr("statics collected");
 
     if(!this->logfile.empty()) {
         fileWriter.flush();

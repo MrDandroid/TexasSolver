@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
+        <file>resources/default_parameters.txt</file>
         <file>resources/compairer/card5_dic_sorted.txt</file>
         <file>resources/compairer/card5_dic_sorted_shortdeck.txt</file>
         <file>resources/compairer/card5_dic_zipped_shortdeck.bin</file>

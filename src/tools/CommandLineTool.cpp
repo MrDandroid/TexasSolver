@@ -154,6 +154,10 @@ void CommandLineTool::processCommand(string input) {
         this->use_isomorphism = stoi(paramstr);
     }else if(command == "set_print_interval"){
         this->print_interval = stoi(paramstr);
+    }else if(command == "set_exploitability_interval"){
+        this->exploitability_interval = stoi(paramstr);
+    }else if(command == "set_collect_evs"){
+        this->collect_evs = stoi(paramstr);
     }else if(command == "start_solve"){
         cout << "<<<START SOLVING>>>" << endl;
         this->ps.train(
@@ -168,7 +172,9 @@ void CommandLineTool::processCommand(string input) {
                 this->accuracy,
                 this->use_isomorphism,
                 0, // TODO: enable half float option for command line tool
-                this->thread_number
+                this->thread_number,
+                this->exploitability_interval,
+                this->collect_evs != 0
         );
     }else if(command == "dump_result"){
         string output_file = paramstr;

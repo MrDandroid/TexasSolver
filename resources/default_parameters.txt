@@ -1,0 +1,36 @@
+set_pot 5.5
+set_effective_stack 97.5
+set_board Qs,Jh,2h
+set_range_oop QQ:0.805,JJ:1.0,TT:1.0,99:1.0,88:1.0,77:1.0,66:0.985,55:0.96,44:0.955,33:0.975,22:1.0,AQs:0.845,AJs:1.0,ATs:1.0,A9s:1.0,A8s:1.0,A7s:1.0,A6s:0.945,A5s:1.0,A4s:0.885,A3s:0.79,A2s:0.67,KQs:1.0,KJs:1.0,KTs:1.0,K9s:1.0,K8s:1.0,K7s:0.955,K6s:0.875,K5s:0.735,K4s:0.7,K3s:0.605,K2s:0.75,QJs:0.775,QTs:0.895,Q9s:0.9,Q8s:0.865,Q7s:1.0,Q6s:0.86,Q5s:0.915,Q4s:0.945,Q3s:0.93,Q2s:0.92,JTs:0.87,J9s:1.0,J8s:1.0,J7s:0.97,J6s:1.0,J5s:0.995,J4s:0.385,T9s:0.83,T8s:1.0,T7s:1.0,T6s:0.98,98s:0.895,97s:1.0,96s:1.0,95s:0.985,87s:0.765,86s:1.0,85s:0.9,84s:0.465,76s:0.735,75s:1.0,74s:0.875,65s:0.715,64s:0.96,63s:0.925,54s:0.82,53s:1.0,52s:0.955,43s:0.87,42s:1.0,32s:1.0,AKo:0.56,AQo:0.995,AJo:1.0,ATo:0.92,A9o:0.9,A8o:0.47,A5o:0.605,KQo:0.86,KJo:0.885,KTo:0.84,QJo:0.97,QTo:0.94,JTo:1.0,J9o:0.05,T9o:0.675,T8o:0.04,98o:0.505,87o:0.425,76o:0.45,65o:0.245,54o:0.07
+set_range_ip AA:1.0,KK:1.0,QQ:1.0,JJ:1.0,TT:1.0,99:1.0,88:1.0,77:1.0,66:1.0,55:0.525,44:0.18,33:0.14,22:0.13,AKs:1.0,AQs:1.0,AJs:1.0,ATs:1.0,A9s:1.0,A8s:1.0,A7s:1.0,A6s:1.0,A5s:1.0,A4s:1.0,A3s:1.0,A2s:0.835,KQs:1.0,KJs:1.0,KTs:1.0,K9s:1.0,K8s:1.0,K7s:0.95,K6s:0.675,K5s:0.52,QJs:1.0,QTs:1.0,Q9s:1.0,Q8s:0.1,JTs:1.0,J9s:1.0,T9s:1.0,T8s:0.35,98s:0.485,87s:0.195,76s:0.18,65s:0.245,54s:0.155,AKo:1.0,AQo:1.0,AJo:1.0,ATo:1.0,KQo:1.0,KJo:0.86,KTo:0.04,QJo:0.46,QTo:0.015
+set_bet_sizes oop,flop,bet,33,75
+set_bet_sizes oop,flop,raise,75
+set_bet_sizes oop,flop,allin
+set_bet_sizes ip,flop,bet,33,75
+set_bet_sizes ip,flop,raise,75
+set_bet_sizes ip,flop,allin
+set_bet_sizes oop,turn,bet,33,75
+set_bet_sizes oop,turn,raise,70
+set_bet_sizes oop,turn,donk,75
+set_bet_sizes oop,turn,allin
+set_bet_sizes ip,turn,bet,33,75
+set_bet_sizes ip,turn,raise,75
+set_bet_sizes ip,turn,allin
+set_bet_sizes oop,river,bet,33,75
+set_bet_sizes oop,river,raise,75
+set_bet_sizes oop,river,allin
+set_bet_sizes ip,river,bet,33,75
+set_bet_sizes ip,river,raise,75
+set_bet_sizes oop,river,donk,75
+set_bet_sizes ip,river,allin
+set_allin_threshold 0.67
+set_raise_limit 3
+build_tree
+set_thread_num 8
+set_accuracy 0.5
+set_max_iteration 2000
+set_print_interval 10
+set_use_isomorphism 1
+start_solve
+set_dump_rounds 3
+dump_result output_result.json

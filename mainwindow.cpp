@@ -4,14 +4,41 @@
 #include "include/runtime/qsolverjob.h"
 #include <QFileDialog>
 #include "include/library.h"
+#include <QCoreApplication>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileSystemModel>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QDir>
 #include <QMessageBox>
+#include <QSettings>
+#include <QTextStream>
 
 QSTextEdit* MainWindow::s_textEdit = 0;
+
+namespace {
+
+QString defaultParametersFilePath()
+{
+    const QString relativePath = "resources/default_parameters.txt";
+    const QDir appDir(QCoreApplication::applicationDirPath());
+    const QStringList candidates = {
+        QDir::current().filePath(relativePath),
+        appDir.filePath(relativePath),
+        appDir.filePath("../" + relativePath),
+        ":/" + relativePath
+    };
+
+    for (const QString& candidate : candidates) {
+        if (QFile::exists(candidate)) {
+            return candidate;
+        }
+    }
+    return QString();
+}
+
+}
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -68,6 +95,14 @@ MainWindow::MainWindow(QWidget *parent) :
     this->ui->oopRangeTableView->setItemDelegate(this->oop_delegate);
     this->ui->oopRangeTableView->verticalHeader()->setMinimumSectionSize(1);
     this->ui->oopRangeTableView->horizontalHeader()->setMinimumSectionSize(1);
+
+    const QString defaultParametersPath = defaultParametersFilePath();
+    if (!defaultParametersPath.isEmpty()) {
+        this->import_from_file(defaultParametersPath);
+        this->ui->IpRangeTableView->update();
+        this->ui->oopRangeTableView->update();
+    }
+
     this->ui->tabWidget->hide();
 }
 
@@ -214,6 +249,10 @@ void MainWindow::import_from_file(QString fileName){
     QTextStream s1(&file);
     content.append(s1.readAll());
     this->clear_all_params();
+    if(this->qSolverJob != NULL){
+        this->qSolverJob->exploitability_interval = -1;
+        this->qSolverJob->collect_evs = 1;
+    }
     for(QString one_line_content:content.split("\n")){
         if(getParams(one_line_content,"set_pot") != "INVALID"){
             this->ui->potText->setText(getParams(one_line_content,"set_pot"));
@@ -309,6 +348,16 @@ void MainWindow::import_from_file(QString fileName){
         else if(getParams(one_line_content,"set_print_interval") != "INVALID"){
             this->ui->logIntervalText->setText(getParams(one_line_content,"set_print_interval"));
         }
+        else if(getParams(one_line_content,"set_exploitability_interval") != "INVALID"){
+            if(this->qSolverJob != NULL){
+                this->qSolverJob->exploitability_interval = getParams(one_line_content,"set_exploitability_interval").toInt();
+            }
+        }
+        else if(getParams(one_line_content,"set_collect_evs") != "INVALID"){
+            if(this->qSolverJob != NULL){
+                this->qSolverJob->collect_evs = getParams(one_line_content,"set_collect_evs").toInt();
+            }
+        }
         else if(getParams(one_line_content,"set_raise_limit") != "INVALID"){
             this->ui->raiseLimitText->setText(getParams(one_line_content,"set_raise_limit"));
         }
@@ -317,6 +366,16 @@ void MainWindow::import_from_file(QString fileName){
                 this->ui->useIsoCheck->setChecked(true);
             }else{
                 this->ui->useIsoCheck->setChecked(false);
+            }
+        }
+        else if(getParams(one_line_content,"set_dump_rounds") != "INVALID"){
+            const int dump_round = getParams(one_line_content,"set_dump_rounds").toInt();
+            QSettings setting("TexasSolver", "Setting");
+            setting.beginGroup("solver");
+            setting.setValue("dump_round", dump_round);
+            setting.endGroup();
+            if (this->qSolverJob != NULL) {
+                this->qSolverJob->dump_rounds = dump_round;
             }
         }
     }
@@ -421,6 +480,14 @@ void MainWindow::on_actionexport_triggered(){
     out << "\n";
     out << "set_print_interval " << this->ui->logIntervalText->text().trimmed();
     out << "\n";
+    if(this->qSolverJob != NULL && this->qSolverJob->exploitability_interval >= 0){
+        out << "set_exploitability_interval " << this->qSolverJob->exploitability_interval;
+        out << "\n";
+    }
+    if(this->qSolverJob != NULL && this->qSolverJob->collect_evs == 0){
+        out << "set_collect_evs 0";
+        out << "\n";
+    }
     if(this->ui->useIsoCheck->isChecked()){
         out << "set_use_isomorphism 1" << "\n";
     }else{

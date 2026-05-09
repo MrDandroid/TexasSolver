@@ -48,6 +48,8 @@ public:
     int use_isomorphism=1;
     int use_halffloats=0;
     int print_interval=10;
+    int exploitability_interval=-1;
+    int collect_evs=1;
     int dump_rounds = 2;
     shared_ptr<GameTreeBuildingSettings> gtbs;
 

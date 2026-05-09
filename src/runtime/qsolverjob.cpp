@@ -130,7 +130,9 @@ void QSolverJob::solving(){
             this->accuracy,
             this->use_isomorphism,
             this->use_halffloats,
-            this->thread_number
+            this->thread_number,
+            this->exploitability_interval,
+            this->collect_evs != 0
             );
     }else{
         this->ps_shortdeck.train(
@@ -145,7 +147,9 @@ void QSolverJob::solving(){
             this->accuracy,
             this->use_isomorphism,
             this->use_halffloats,
-            this->thread_number
+            this->thread_number,
+            this->exploitability_interval,
+            this->collect_evs != 0
             );
     }
     qDebug().noquote() << tr("Solving done.");

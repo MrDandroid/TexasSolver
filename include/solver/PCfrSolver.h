@@ -18,6 +18,8 @@
 #include <queue>
 #include <optional>
 #include <array>
+#include <mutex>
+#include <unordered_map>
 #include <include/tools/OptimizationSwitches.h>
 class StrategyJsonExporterV2;
 /*
@@ -94,7 +96,9 @@ public:
             float accuracy,
             bool use_isomorphism,
             int use_halffloats,
-            int num_threads
+            int num_threads,
+            int exploitability_interval = -1,
+            bool collect_evs = true
     );
     ~PCfrSolver();
     void train() override;
@@ -147,6 +151,7 @@ private:
     int color_iso_offset[52 * 52 * 2][4] = {0};
     bool collecting_statics = false;
     bool statics_collected = false;
+    bool collect_evs = true;
 
     Deck deck;
     RiverRangeManager rrm;
@@ -156,8 +161,13 @@ private:
 #if TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE
     vector<vector<vector<int>>> same_card_index;
 #endif
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
+    unordered_map<uint64_t, vector<vector<int>>> river_valid_combo_indices;
+    std::mutex river_result_cache_lock;
+#endif
     bool debug;
     int print_interval;
+    int exploitability_interval;
     string trainer;
     string logfile;
     Solver::MonteCarolAlg monteCarolAlg;
@@ -177,11 +187,19 @@ private:
     static vector<PrivateCards> noDuplicateRange(const vector<PrivateCards>& private_range,uint64_t board_long);
     void setTrainable(shared_ptr<GameTreeNode> root);
     vector<float> cfr(int player, shared_ptr<GameTreeNode> node, const vector<float>& reach_probs, int iter, uint64_t current_board,int deal);
+    void cfrInto(int player, const shared_ptr<GameTreeNode>& node, const vector<float>& reach_probs, int iter, uint64_t current_board,int deal, vector<float>& out);
     vector<int> getAllAbstractionDeal(int deal);
     vector<float> chanceUtility(int player,shared_ptr<ChanceNode> node,const vector<float>& reach_probs,int iter,uint64_t current_boardi,int deal);
+    void chanceUtilityInto(int player,const shared_ptr<ChanceNode>& node,const vector<float>& reach_probs,int iter,uint64_t current_boardi,int deal, vector<float>& out);
     vector<float> showdownUtility(int player,shared_ptr<ShowdownNode> node,const vector<float>& reach_probs,int iter,uint64_t current_board,int deal);
+    void showdownUtilityInto(int player,const shared_ptr<ShowdownNode>& node,const vector<float>& reach_probs,int iter,uint64_t current_board,int deal, vector<float>& out);
     vector<float> actionUtility(int player,shared_ptr<ActionNode> node,const vector<float>& reach_probs,int iter,uint64_t current_board,int deal);
+    void actionUtilityInto(int player,const shared_ptr<ActionNode>& node,const vector<float>& reach_probs,int iter,uint64_t current_board,int deal, vector<float>& out);
     vector<float> terminalUtility(int player,shared_ptr<TerminalNode> node,const vector<float>& reach_prob,int iter,uint64_t current_board,int deal);
+    void terminalUtilityInto(int player,const shared_ptr<TerminalNode>& node,const vector<float>& reach_prob,int iter,uint64_t current_board,int deal, vector<float>& out);
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
+    const vector<int>& getRiverValidComboIndices(int player, uint64_t current_board);
+#endif
     void findGameSpecificIsomorphisms();
     void purnTree();
     void exchangeRange(json& strategy,int rank1,int rank2,shared_ptr<ActionNode> one_node);

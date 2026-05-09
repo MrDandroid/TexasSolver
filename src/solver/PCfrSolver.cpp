@@ -125,6 +125,9 @@ PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, v
         }
     }
 #endif
+#if TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
+    this->buildColorExchangeCache();
+#endif
     this->debug = debug;
     this->print_interval = print_interval;
     this->exploitability_interval = exploitability_interval < 0 ? print_interval : exploitability_interval;
@@ -151,6 +154,70 @@ PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, v
         this->split_round = GameTreeNode::GameRound::PREFLOP;
     }
 }
+
+#if TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
+void PCfrSolver::buildColorExchangeCache() {
+    this->color_exchange_pairs.clear();
+    this->color_exchange_pairs.resize(this->player_number);
+
+    for (int player = 0; player < this->player_number; ++player) {
+        const vector<PrivateCards>& range = this->pcm.getPreflopCards(player);
+        for (int rank1 = 0; rank1 < 4; ++rank1) {
+            for (int rank2 = 0; rank2 < 4; ++rank2) {
+                vector<pair<int, int>>& pairs = this->color_exchange_pairs[player][rank1][rank2];
+                pairs.clear();
+                if (rank1 == rank2 || range.empty()) {
+                    continue;
+                }
+
+                vector<int> self_ind(range.size());
+                int privateint2ind[52 * 52 * 2] = {0};
+
+                for (std::size_t i = 0; i < range.size(); i++) {
+                    const PrivateCards& pc = range[i];
+                    int card1 = pc.card1;
+                    int card2 = pc.card2;
+                    if(card1 > card2){
+                        int tmp = card1;
+                        card1 = card2;
+                        card2 = tmp;
+                    }
+                    self_ind[i] = card1 * 52 + card2;
+
+                    if(card1 % 4 == rank1) card1 = card1 - rank1 + rank2;
+                    else if(card1 % 4 == rank2) card1 = card1 - rank2 + rank1;
+
+                    if(card2 % 4 == rank1) card2 = card2 - rank1 + rank2;
+                    else if(card2 % 4 == rank2) card2 = card2 - rank2 + rank1;
+
+                    if(card1 > card2){
+                        int tmp = card1;
+                        card1 = card2;
+                        card2 = tmp;
+                    }
+                    privateint2ind[card1 * 52 + card2] = static_cast<int>(i);
+                }
+
+                for (std::size_t i = 0; i < range.size(); i++) {
+                    if(self_ind[i] == -1) continue;
+                    std::size_t ind = privateint2ind[self_ind[i]];
+                    if(ind != i){
+                        self_ind[ind] = -1;
+                        pairs.emplace_back(static_cast<int>(i), static_cast<int>(ind));
+                    }
+                }
+            }
+        }
+    }
+}
+
+void PCfrSolver::exchangeColorWithPairs(vector<float>& value, const vector<pair<int, int>>& pairs) {
+    if(value.empty()) return;
+    for (const pair<int, int>& one_pair : pairs) {
+        std::swap(value[one_pair.first], value[one_pair.second]);
+    }
+}
+#endif
 
 const vector<PrivateCards> &PCfrSolver::playerHands(int player) {
     if(player == 0){
@@ -296,16 +363,32 @@ vector<float> PCfrSolver::cfr(int player, shared_ptr<GameTreeNode> node, const v
 #else
     switch(node->getType()) {
         case GameTreeNode::ACTION: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<ActionNode> action_node = std::static_pointer_cast<ActionNode>(node);
+#else
             shared_ptr<ActionNode> action_node = std::dynamic_pointer_cast<ActionNode>(node);
+#endif
             return actionUtility(player, action_node, reach_probs, iter, current_board,deal);
         }case GameTreeNode::SHOWDOWN: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<ShowdownNode> showdown_node = std::static_pointer_cast<ShowdownNode>(node);
+#else
             shared_ptr<ShowdownNode> showdown_node = std::dynamic_pointer_cast<ShowdownNode>(node);
+#endif
             return showdownUtility(player, showdown_node, reach_probs, iter, current_board,deal);
         }case GameTreeNode::TERMINAL: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<TerminalNode> terminal_node = std::static_pointer_cast<TerminalNode>(node);
+#else
             shared_ptr<TerminalNode> terminal_node = std::dynamic_pointer_cast<TerminalNode>(node);
+#endif
             return terminalUtility(player, terminal_node, reach_probs, iter, current_board,deal);
         }case GameTreeNode::CHANCE: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<ChanceNode> chance_node = std::static_pointer_cast<ChanceNode>(node);
+#else
             shared_ptr<ChanceNode> chance_node = std::dynamic_pointer_cast<ChanceNode>(node);
+#endif
             return chanceUtility(player, chance_node, reach_probs, iter, current_board,deal);
         }default:
             throw runtime_error("node type unknown");
@@ -317,19 +400,35 @@ void PCfrSolver::cfrInto(int player, const shared_ptr<GameTreeNode>& node, const
                                     uint64_t current_board,int deal, vector<float>& out) {
     switch(node->getType()) {
         case GameTreeNode::ACTION: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<ActionNode> action_node = std::static_pointer_cast<ActionNode>(node);
+#else
             shared_ptr<ActionNode> action_node = std::dynamic_pointer_cast<ActionNode>(node);
+#endif
             this->actionUtilityInto(player, action_node, reach_probs, iter, current_board,deal, out);
             return;
         }case GameTreeNode::SHOWDOWN: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<ShowdownNode> showdown_node = std::static_pointer_cast<ShowdownNode>(node);
+#else
             shared_ptr<ShowdownNode> showdown_node = std::dynamic_pointer_cast<ShowdownNode>(node);
+#endif
             this->showdownUtilityInto(player, showdown_node, reach_probs, iter, current_board,deal, out);
             return;
         }case GameTreeNode::TERMINAL: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<TerminalNode> terminal_node = std::static_pointer_cast<TerminalNode>(node);
+#else
             shared_ptr<TerminalNode> terminal_node = std::dynamic_pointer_cast<TerminalNode>(node);
+#endif
             this->terminalUtilityInto(player, terminal_node, reach_probs, iter, current_board,deal, out);
             return;
         }case GameTreeNode::CHANCE: {
+#if TEXASSOLVER_OPT_STATIC_NODE_CAST
+            shared_ptr<ChanceNode> chance_node = std::static_pointer_cast<ChanceNode>(node);
+#else
             shared_ptr<ChanceNode> chance_node = std::dynamic_pointer_cast<ChanceNode>(node);
+#endif
             this->chanceUtilityInto(player, chance_node, reach_probs, iter, current_board,deal, out);
             return;
         }default:
@@ -537,7 +636,11 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
             if(rank2 < 0) throw runtime_error("rank error");
 #endif
             exchanged_child_utility = results[one_card->getNumberInDeckInt() + offset];
+#if TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
+            exchangeColorWithPairs(exchanged_child_utility, this->color_exchange_pairs[player][rank1][rank2]);
+#else
             exchange_color(exchanged_child_utility,this->pcm.getPreflopCards(player),rank1,rank2);
+#endif
             child_utility_ptr = &exchanged_child_utility;
         }else{
             child_utility_ptr = &results[one_card->getNumberInDeckInt()];

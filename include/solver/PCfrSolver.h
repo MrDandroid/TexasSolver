@@ -165,6 +165,9 @@ private:
     unordered_map<uint64_t, vector<vector<int>>> river_valid_combo_indices;
     std::mutex river_result_cache_lock;
 #endif
+#if TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
+    vector<std::array<std::array<vector<pair<int, int>>, 4>, 4>> color_exchange_pairs;
+#endif
     bool debug;
     int print_interval;
     int exploitability_interval;
@@ -199,6 +202,10 @@ private:
     void terminalUtilityInto(int player,const shared_ptr<TerminalNode>& node,const vector<float>& reach_prob,int iter,uint64_t current_board,int deal, vector<float>& out);
 #if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
     const vector<int>& getRiverValidComboIndices(int player, uint64_t current_board);
+#endif
+#if TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
+    void buildColorExchangeCache();
+    static void exchangeColorWithPairs(vector<float>& value, const vector<pair<int, int>>& pairs);
 #endif
     void findGameSpecificIsomorphisms();
     void purnTree();

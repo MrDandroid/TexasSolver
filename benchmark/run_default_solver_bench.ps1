@@ -19,6 +19,9 @@ param(
     [switch]$DisableRiverLazyCache,
     [switch]$DisableRiverResultCache,
     [switch]$DisableCfrOutBuffer,
+    [switch]$DisableStaticNodeCast,
+    [switch]$DisableExchangeColorConstRange,
+    [switch]$DisableColorExchangeCache,
     [switch]$OptimizeO2,
     [switch]$IsoPotentialOnly,
     [int]$ExploitabilityInterval = -1,
@@ -90,6 +93,9 @@ $optRiverCanonicalRankCache = if ($DisableRiverCanonicalRankCache) { 0 } else { 
 $optRiverLazyCache = if ($DisableRiverLazyCache) { 0 } else { 1 }
 $optRiverResultCache = if ($DisableRiverResultCache) { 0 } else { 1 }
 $optCfrOutBuffer = if ($DisableCfrOutBuffer) { 0 } else { 1 }
+$optStaticNodeCast = if ($DisableStaticNodeCast) { 0 } else { 1 }
+$optExchangeColorConstRange = if ($DisableExchangeColorConstRange) { 0 } else { 1 }
+$optColorExchangeCache = if ($DisableColorExchangeCache) { 0 } else { 1 }
 $optimizationDefines = @(
     "TEXASSOLVER_OPT_LIGHT_RIVER_COMBS=$optLightRiverCombs",
     "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
@@ -102,7 +108,10 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_RIVER_CANONICAL_RANK_CACHE=$optRiverCanonicalRankCache",
     "TEXASSOLVER_OPT_RIVER_LAZY_CACHE=$optRiverLazyCache",
     "TEXASSOLVER_OPT_RIVER_RESULT_CACHE=$optRiverResultCache",
-    "TEXASSOLVER_OPT_CFR_OUT_BUFFER=$optCfrOutBuffer"
+    "TEXASSOLVER_OPT_CFR_OUT_BUFFER=$optCfrOutBuffer",
+    "TEXASSOLVER_OPT_STATIC_NODE_CAST=$optStaticNodeCast",
+    "TEXASSOLVER_OPT_EXCHANGE_COLOR_CONST_RANGE=$optExchangeColorConstRange",
+    "TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE=$optColorExchangeCache"
 )
 
 $buildName = "Desktop_Qt_5_15_2_MinGW_64_bit-release"
@@ -147,6 +156,15 @@ if ($DisableRiverResultCache) {
 }
 if ($DisableCfrOutBuffer) {
     $buildName += "-no-cfr-out-buffer"
+}
+if ($DisableStaticNodeCast) {
+    $buildName += "-no-static-node-cast"
+}
+if ($DisableExchangeColorConstRange) {
+    $buildName += "-no-exchange-color-const-range"
+}
+if ($DisableColorExchangeCache) {
+    $buildName += "-no-color-exchange-cache"
 }
 $buildDir = Join-Path $repoRoot "build\$buildName"
 $releaseDir = Join-Path $buildDir "release"
@@ -367,6 +385,9 @@ $summary = [ordered]@{
         river_lazy_cache = [bool]$optRiverLazyCache
         river_result_cache = [bool]$optRiverResultCache
         cfr_out_buffer = [bool]$optCfrOutBuffer
+        static_node_cast = [bool]$optStaticNodeCast
+        exchange_color_const_range = [bool]$optExchangeColorConstRange
+        color_exchange_cache = [bool]$optColorExchangeCache
     }
     timing_ms = $timing
     final_iteration = if ($finalIterText) { [int]$finalIterText } else { $null }
@@ -469,7 +490,7 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache cfr_out_buffer=$optCfrOutBuffer"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

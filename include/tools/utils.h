@@ -16,7 +16,13 @@
 #include <include/nodes/ShowdownNode.h>
 
 template <typename T>
-void exchange_color(vector<T>& value,vector<PrivateCards> range,int rank1,int rank2){
+void exchange_color(vector<T>& value,
+#if TEXASSOLVER_OPT_EXCHANGE_COLOR_CONST_RANGE
+                    const vector<PrivateCards>& range,
+#else
+                    vector<PrivateCards> range,
+#endif
+                    int rank1,int rank2){
 #ifdef DEBUG
     if(value.size() != range.size()) throw runtime_error("size problem");
     if(rank1 >= rank2) throw runtime_error("rank value problem");
@@ -25,7 +31,7 @@ void exchange_color(vector<T>& value,vector<PrivateCards> range,int rank1,int ra
     vector<int> self_ind = vector<int>(value.size());
     int privateint2ind[52 * 52 * 2] = {0};
     for(std::size_t i = 0;i < range.size();i ++){
-        PrivateCards& pc = range[i];
+        const PrivateCards& pc = range[i];
         int card1 = pc.card1;
         int card2 = pc.card2;
         if(card1 > card2){

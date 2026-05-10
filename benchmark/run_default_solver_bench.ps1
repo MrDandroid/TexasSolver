@@ -9,6 +9,7 @@ param(
     [switch]$ProfileHotspots,
     [switch]$DisableLightRiverCombs,
     [switch]$DisableShowdownFastFields,
+    [switch]$DisableShowdownLossFromTotal,
     [switch]$DisableTerminalSameCardCache,
     [switch]$DisableActionStrategyBuffer,
     [switch]$DisableUpdateRegretsInline,
@@ -18,6 +19,7 @@ param(
     [switch]$DisableRiverCanonicalRankCache,
     [switch]$DisableRiverLazyCache,
     [switch]$DisableRiverResultCache,
+    [switch]$DisableRiverResultBoardCache,
     [switch]$DisableCfrOutBuffer,
     [switch]$DisableStaticNodeCast,
     [switch]$DisableExchangeColorConstRange,
@@ -83,6 +85,7 @@ $gxx = Join-Path $mingwRoot "bin\g++.exe"
 $optimizationLevel = if ($OptimizeO2) { "-O2" } else { "-O3" }
 $optLightRiverCombs = if ($DisableLightRiverCombs) { 0 } else { 1 }
 $optShowdownFastFields = if ($DisableShowdownFastFields) { 0 } else { 1 }
+$optShowdownLossFromTotal = if ($DisableShowdownLossFromTotal) { 0 } else { 1 }
 $optTerminalSameCardCache = if ($DisableTerminalSameCardCache) { 0 } else { 1 }
 $optActionStrategyBuffer = if ($DisableActionStrategyBuffer) { 0 } else { 1 }
 $optUpdateRegretsInline = if ($DisableUpdateRegretsInline) { 0 } else { 1 }
@@ -92,6 +95,7 @@ $optActionRegretDirectUpdate = if ($DisableActionRegretDirectUpdate) { 0 } else 
 $optRiverCanonicalRankCache = if ($DisableRiverCanonicalRankCache) { 0 } else { 1 }
 $optRiverLazyCache = if ($DisableRiverLazyCache) { 0 } else { 1 }
 $optRiverResultCache = if ($DisableRiverResultCache) { 0 } else { 1 }
+$optRiverResultBoardCache = if ($DisableRiverResultBoardCache) { 0 } else { 1 }
 $optCfrOutBuffer = if ($DisableCfrOutBuffer) { 0 } else { 1 }
 $optStaticNodeCast = if ($DisableStaticNodeCast) { 0 } else { 1 }
 $optExchangeColorConstRange = if ($DisableExchangeColorConstRange) { 0 } else { 1 }
@@ -99,6 +103,7 @@ $optColorExchangeCache = if ($DisableColorExchangeCache) { 0 } else { 1 }
 $optimizationDefines = @(
     "TEXASSOLVER_OPT_LIGHT_RIVER_COMBS=$optLightRiverCombs",
     "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
+    "TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL=$optShowdownLossFromTotal",
     "TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE=$optTerminalSameCardCache",
     "TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER=$optActionStrategyBuffer",
     "TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE=$optUpdateRegretsInline",
@@ -108,6 +113,7 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_RIVER_CANONICAL_RANK_CACHE=$optRiverCanonicalRankCache",
     "TEXASSOLVER_OPT_RIVER_LAZY_CACHE=$optRiverLazyCache",
     "TEXASSOLVER_OPT_RIVER_RESULT_CACHE=$optRiverResultCache",
+    "TEXASSOLVER_OPT_RIVER_RESULT_BOARD_CACHE=$optRiverResultBoardCache",
     "TEXASSOLVER_OPT_CFR_OUT_BUFFER=$optCfrOutBuffer",
     "TEXASSOLVER_OPT_STATIC_NODE_CAST=$optStaticNodeCast",
     "TEXASSOLVER_OPT_EXCHANGE_COLOR_CONST_RANGE=$optExchangeColorConstRange",
@@ -126,6 +132,9 @@ if ($DisableLightRiverCombs) {
 }
 if ($DisableShowdownFastFields) {
     $buildName += "-no-showdown-fast-fields"
+}
+if ($DisableShowdownLossFromTotal) {
+    $buildName += "-no-showdown-loss-from-total"
 }
 if ($DisableTerminalSameCardCache) {
     $buildName += "-no-terminal-same-card-cache"
@@ -154,6 +163,9 @@ if ($DisableRiverLazyCache) {
 if ($DisableRiverResultCache) {
     $buildName += "-no-river-result-cache"
 }
+if ($DisableRiverResultBoardCache) {
+    $buildName += "-no-river-result-board-cache"
+}
 if ($DisableCfrOutBuffer) {
     $buildName += "-no-cfr-out-buffer"
 }
@@ -170,20 +182,25 @@ $buildDir = Join-Path $repoRoot "build\$buildName"
 $releaseDir = Join-Path $buildDir "release"
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 
-if (!(Test-Path (Join-Path $buildDir "Makefile.Release"))) {
+$qmakeArgs = @("..\..\TexasSolverGui.pro", "-spec", "win32-g++", "CONFIG+=release", "QMAKE_CXXFLAGS_RELEASE+=$optimizationLevel")
+if ($ProfileHotspots) {
+    $qmakeArgs += "DEFINES+=TEXASSOLVER_HOTSPOT_PROFILING"
+}
+foreach ($define in $optimizationDefines) {
+    $qmakeArgs += "DEFINES+=$define"
+}
+$buildSignature = ($qmakeArgs -join "`n")
+$buildSignaturePath = Join-Path $buildDir ".benchmark_build_signature"
+$previousBuildSignature = if (Test-Path $buildSignaturePath) { Get-Content $buildSignaturePath -Raw } else { "" }
+
+if (!(Test-Path (Join-Path $buildDir "Makefile.Release")) -or $previousBuildSignature -ne $buildSignature) {
     Push-Location $buildDir
     try {
-        $qmakeArgs = @("..\..\TexasSolverGui.pro", "-spec", "win32-g++", "CONFIG+=release", "QMAKE_CXXFLAGS_RELEASE+=$optimizationLevel")
-        if ($ProfileHotspots) {
-            $qmakeArgs += "DEFINES+=TEXASSOLVER_HOTSPOT_PROFILING"
-        }
-        foreach ($define in $optimizationDefines) {
-            $qmakeArgs += "DEFINES+=$define"
-        }
         & $qmake @qmakeArgs
         if ($LASTEXITCODE -ne 0) {
             throw "qmake failed with exit code $LASTEXITCODE"
         }
+        Set-Content -Path $buildSignaturePath -Value $buildSignature
     } finally {
         Pop-Location
     }
@@ -375,6 +392,7 @@ $summary = [ordered]@{
     optimization_switches = [ordered]@{
         light_river_combs = [bool]$optLightRiverCombs
         showdown_fast_fields = [bool]$optShowdownFastFields
+        showdown_loss_from_total = [bool]$optShowdownLossFromTotal
         terminal_same_card_cache = [bool]$optTerminalSameCardCache
         action_strategy_buffer = [bool]$optActionStrategyBuffer
         update_regrets_inline = [bool]$optUpdateRegretsInline
@@ -384,6 +402,7 @@ $summary = [ordered]@{
         river_canonical_rank_cache = [bool]$optRiverCanonicalRankCache
         river_lazy_cache = [bool]$optRiverLazyCache
         river_result_cache = [bool]$optRiverResultCache
+        river_result_board_cache = [bool]$optRiverResultBoardCache
         cfr_out_buffer = [bool]$optCfrOutBuffer
         static_node_cast = [bool]$optStaticNodeCast
         exchange_color_const_range = [bool]$optExchangeColorConstRange
@@ -490,7 +509,7 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields showdown_loss_from_total=$optShowdownLossFromTotal terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache river_result_board_cache=$optRiverResultBoardCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

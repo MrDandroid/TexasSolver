@@ -953,6 +953,24 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
     float winsum = 0.0f;
     std::array<float, 52> card_winsum{};
 
+#if TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL
+    float oppo_total_sum = 0.0f;
+    std::array<float, 52> oppo_total_card_sum{};
+    for (const RiverCombs& one_oppo_comb : oppo_combs) {
+#if TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS
+        const int oppo_reach_index = one_oppo_comb.reach_prob_index;
+        const float oppo_reach = reach_probs[oppo_reach_index];
+        oppo_total_sum += oppo_reach;
+        oppo_total_card_sum[one_oppo_comb.card1] += oppo_reach;
+        oppo_total_card_sum[one_oppo_comb.card2] += oppo_reach;
+#else
+        oppo_total_sum += reach_probs[one_oppo_comb.reach_prob_index];
+        oppo_total_card_sum[one_oppo_comb.card1] += reach_probs[one_oppo_comb.reach_prob_index];
+        oppo_total_card_sum[one_oppo_comb.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+#endif
+    }
+#endif
+
     // ===== tie cache（新加）=====
     int cached_rank = INT32_MIN;
     float tiesum = 0.0f;
@@ -1009,11 +1027,18 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
         const float tie_prob = (tiesum - card_tiesum[c1] - card_tiesum[c2]);
 
         payoffs[one_player_comb.reach_prob_index] =
+#if TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL
+            win_prob * win_payoff_adj
+            + tie_prob * tie_payoff_adj
+            + (oppo_total_sum - oppo_total_card_sum[c1] - oppo_total_card_sum[c2] - win_prob - tie_prob) * lose_payoff;
+#else
             win_prob * win_payoff_adj
             + tie_prob * tie_payoff_adj;
+#endif
     }
 
     // ===== lose part（你原有逻辑保持，但不需要改，仍乘 lose_payoff）=====
+#if !TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL
     float losssum = 0.0f;
     std::array<float, 52>& card_losssum = card_winsum;
     std::fill(card_losssum.begin(), card_losssum.end(), 0.0f);
@@ -1038,9 +1063,10 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
         }
         payoffs[one_player_comb.reach_prob_index] += (losssum
                                                       - card_losssum[one_player_comb.card1]
-                                                      - card_losssum[one_player_comb.card2]
-                                                      ) * lose_payoff;
+                                                       - card_losssum[one_player_comb.card2]
+                                                       ) * lose_payoff;
     }
+#endif
 
     return;
 }
@@ -1068,6 +1094,33 @@ const vector<int>& PCfrSolver::getRiverValidComboIndices(int player, uint64_t cu
     }
     return valid_indices;
 }
+
+#if TEXASSOLVER_OPT_RIVER_RESULT_BOARD_CACHE
+const vector<vector<int>>& PCfrSolver::getRiverValidComboIndicesForBoard(uint64_t current_board) {
+    std::lock_guard<std::mutex> lock(this->river_result_cache_lock);
+    vector<vector<int>>& by_player = this->river_valid_combo_indices[current_board];
+    if (by_player.empty()) {
+        by_player.resize(this->player_number);
+    }
+
+    for (int player = 0; player < this->player_number; ++player) {
+        vector<int>& valid_indices = by_player[player];
+        if (!valid_indices.empty()) {
+            continue;
+        }
+
+        const vector<PrivateCards>& hands = this->playerHands(player);
+        valid_indices.reserve(hands.size());
+        for (std::size_t i = 0; i < hands.size(); ++i) {
+            if (!Card::boardsHasIntercept(current_board, hands[i].toBoardLong())) {
+                valid_indices.push_back(static_cast<int>(i));
+            }
+        }
+    }
+
+    return by_player;
+}
+#endif
 #endif
 
 vector<float>
@@ -1101,8 +1154,13 @@ void PCfrSolver::terminalUtilityInto(int player, const shared_ptr<TerminalNode>&
     float oppo_sum = 0;
     std::array<float, 52> oppo_card_sum{};
 
-#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE && TEXASSOLVER_OPT_RIVER_RESULT_BOARD_CACHE
+    const vector<vector<int>>& valid_indices_by_player = this->getRiverValidComboIndicesForBoard(current_board);
+    const vector<int>& oppo_valid_indices = valid_indices_by_player[oppo];
+#elif TEXASSOLVER_OPT_RIVER_RESULT_CACHE
     const vector<int>& oppo_valid_indices = this->getRiverValidComboIndices(oppo, current_board);
+#endif
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
     for (int oppo_index : oppo_valid_indices) {
         const PrivateCards& oppo_cards = oppo_hand[oppo_index];
         oppo_card_sum[oppo_cards.card1] += reach_prob[oppo_index];
@@ -1117,8 +1175,12 @@ void PCfrSolver::terminalUtilityInto(int player, const shared_ptr<TerminalNode>&
     }
 #endif
 
-#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE && TEXASSOLVER_OPT_RIVER_RESULT_BOARD_CACHE
+    const vector<int>& player_valid_indices = valid_indices_by_player[player];
+#elif TEXASSOLVER_OPT_RIVER_RESULT_CACHE
     const vector<int>& player_valid_indices = this->getRiverValidComboIndices(player, current_board);
+#endif
+#if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
     for (int player_index : player_valid_indices) {
         const int player_hand_index = player_index;
         const PrivateCards& one_player_hand = player_hand[player_index];

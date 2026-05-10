@@ -202,6 +202,9 @@ private:
     void terminalUtilityInto(int player,const shared_ptr<TerminalNode>& node,const vector<float>& reach_prob,int iter,uint64_t current_board,int deal, vector<float>& out);
 #if TEXASSOLVER_OPT_RIVER_RESULT_CACHE
     const vector<int>& getRiverValidComboIndices(int player, uint64_t current_board);
+#if TEXASSOLVER_OPT_RIVER_RESULT_BOARD_CACHE
+    const vector<vector<int>>& getRiverValidComboIndicesForBoard(uint64_t current_board);
+#endif
 #endif
 #if TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
     void buildColorExchangeCache();

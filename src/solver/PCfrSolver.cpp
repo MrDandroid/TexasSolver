@@ -712,34 +712,50 @@ void PCfrSolver::actionUtilityInto(int player, const shared_ptr<ActionNode>& nod
 
     if (node_player != player) {
         vector<float> new_reach_prob(reach_probs.size());
-#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER && !TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS
         vector<float> action_strategy(reach_probs.size());
 #endif
 #if TEXASSOLVER_OPT_CFR_OUT_BUFFER
         vector<float> action_utilities;
 #endif
         for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
-#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
-            trainable->fillCurrentStrategyForAction((int)action_id, action_strategy);
-#endif
-            for (std::size_t hand_id = 0; hand_id < new_reach_prob.size(); hand_id++) {
-#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
-                float strategy_prob = action_strategy[hand_id];
+            {
+                TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionOpponentReach);
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS
+                trainable->fillReachProbsForAction((int)action_id, reach_probs, new_reach_prob);
 #else
-                float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+                trainable->fillCurrentStrategyForAction((int)action_id, action_strategy);
 #endif
-                new_reach_prob[hand_id] = reach_probs[hand_id] * strategy_prob;
+                for (std::size_t hand_id = 0; hand_id < new_reach_prob.size(); hand_id++) {
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+                    float strategy_prob = action_strategy[hand_id];
+#else
+                    float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
+#endif
+                    new_reach_prob[hand_id] = reach_probs[hand_id] * strategy_prob;
+                }
+#endif
             }
 #if TEXASSOLVER_OPT_CFR_OUT_BUFFER
-            this->cfrInto(player, children[action_id], new_reach_prob, iter, current_board, deal, action_utilities);
+            {
+                TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionOpponentChild);
+                this->cfrInto(player, children[action_id], new_reach_prob, iter, current_board, deal, action_utilities);
+            }
 #else
-            vector<float> action_utilities = this->cfr(player, children[action_id], new_reach_prob, iter,
-                                                       current_board,deal);
+            vector<float> action_utilities;
+            {
+                TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionOpponentChild);
+                action_utilities = this->cfr(player, children[action_id], new_reach_prob, iter,
+                                             current_board,deal);
+            }
 #endif
             if(action_utilities.empty()){
                 continue;
             }
 
+            {
+                TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionOpponentPayoff);
             // cfr缁撴灉鏄瘡鎵嬬墝鐨勬敹鐩婏紝payoffs浠ｈ〃鐨勪篃鏄瘡鎵嬬墝鐨勬敹鐩婏紝浠栦滑鐨勯暱搴︾悊搴旂浉绛?#ifdef DEBUG
 #ifdef DEBUG
             if (action_utilities.size() != payoffs.size()) {
@@ -758,80 +774,98 @@ void PCfrSolver::actionUtilityInto(int player, const shared_ptr<ActionNode>& nod
             for (std::size_t hand_id = 0; hand_id < action_utilities.size(); hand_id++) {
                 payoffs[hand_id] += action_utilities[hand_id];
             }
+            }
         }
         return;
     }
 
     vector<vector<float>> results(actions.size());
-    for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
-        //#pragma omp task shared(results,action_id)
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionPlayerChildren);
+        for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
+            //#pragma omp task shared(results,action_id)
 #if TEXASSOLVER_OPT_CFR_OUT_BUFFER
-        this->cfrInto(player, children[action_id], reach_probs, iter, current_board, deal, results[action_id]);
+            this->cfrInto(player, children[action_id], reach_probs, iter, current_board, deal, results[action_id]);
 #else
-        results[action_id] = this->cfr(player, children[action_id], reach_probs, iter,
-                                       current_board,deal);
+            results[action_id] = this->cfr(player, children[action_id], reach_probs, iter,
+                                           current_board,deal);
 #endif
+        }
     }
 
     //#pragma omp taskwait
-#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
-    vector<float> action_strategy(node_player_private_cards.size());
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionPlayerPayoff);
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER && !TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS
+        vector<float> action_strategy(node_player_private_cards.size());
 #endif
-    for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
-        const vector<float>& action_utilities = results[action_id];
-        if(action_utilities.empty()){
-            continue;
-        }
+        for (std::size_t action_id = 0; action_id < actions.size(); action_id++) {
+            const vector<float>& action_utilities = results[action_id];
+            if(action_utilities.empty()){
+                continue;
+            }
+#if !TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS
 #if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
-        trainable->fillCurrentStrategyForAction((int)action_id, action_strategy);
+            trainable->fillCurrentStrategyForAction((int)action_id, action_strategy);
+#endif
 #endif
 
         // cfr结果是每手牌的收益，payoffs代表的也是每手牌的收益，他们的长度理应相等
 #ifdef DEBUG
-        if (action_utilities.size() != payoffs.size()) {
-            cout << ("errmsg") << endl;
-            cout << (tfm::format("node player %s ", node->getPlayer())) << endl;
-            node->printHistory();
-            throw runtime_error(
-                    tfm::format(
-                            "action and payoff length not match %s - %s", action_utilities.size(),
-                            payoffs.size()
-                    )
-            );
-        }
+            if (action_utilities.size() != payoffs.size()) {
+                cout << ("errmsg") << endl;
+                cout << (tfm::format("node player %s ", node->getPlayer())) << endl;
+                node->printHistory();
+                throw runtime_error(
+                        tfm::format(
+                                "action and payoff length not match %s - %s", action_utilities.size(),
+                                payoffs.size()
+                        )
+                );
+            }
 #endif
 
-        for (std::size_t hand_id = 0; hand_id < action_utilities.size(); hand_id++) {
-#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
-            float strategy_prob = action_strategy[hand_id];
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS
+            trainable->accumulateStrategyWeightedActionUtility((int)action_id, action_utilities, payoffs);
 #else
-            float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
+            for (std::size_t hand_id = 0; hand_id < action_utilities.size(); hand_id++) {
+#if TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER
+                float strategy_prob = action_strategy[hand_id];
+#else
+                float strategy_prob = trainable->getCurrentStrategy(action_id, hand_id);
 #endif
-            payoffs[hand_id] += strategy_prob * action_utilities[hand_id];
+                payoffs[hand_id] += strategy_prob * action_utilities[hand_id];
+            }
+#endif
         }
     }
 
 
 #if TEXASSOLVER_OPT_ACTION_REGRET_DIRECT_UPDATE
-    if(!this->distributing_task && !this->collecting_statics) {
-        if (iter > this->warmup) {
-            trainable->updateRegretsFromActionUtilities(results, payoffs, iter + 1, reach_probs);
-        } else {
-            // iter == this->warmup
-            vector<int> deals = this->getAllAbstractionDeal(deal);
-            shared_ptr<Trainable> standard_trainable = nullptr;
-            for (int one_deal : deals) {
-                shared_ptr<Trainable> one_trainable = node->getTrainable(one_deal,true,this->use_halffloats);
-                if (standard_trainable == nullptr) {
-                    one_trainable->updateRegretsFromActionUtilities(results, payoffs, iter + 1, reach_probs);
-                    standard_trainable = one_trainable;
-                } else {
-                    one_trainable->copyStrategy(standard_trainable);
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionPlayerRegret);
+        if(!this->distributing_task && !this->collecting_statics) {
+            if (iter > this->warmup) {
+                trainable->updateRegretsFromActionUtilities(results, payoffs, iter + 1, reach_probs);
+            } else {
+                // iter == this->warmup
+                vector<int> deals = this->getAllAbstractionDeal(deal);
+                shared_ptr<Trainable> standard_trainable = nullptr;
+                for (int one_deal : deals) {
+                    shared_ptr<Trainable> one_trainable = node->getTrainable(one_deal,true,this->use_halffloats);
+                    if (standard_trainable == nullptr) {
+                        one_trainable->updateRegretsFromActionUtilities(results, payoffs, iter + 1, reach_probs);
+                        standard_trainable = one_trainable;
+                    } else {
+                        one_trainable->copyStrategy(standard_trainable);
+                    }
                 }
             }
         }
     }
 #else
+    {
+        TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionPlayerRegret);
     vector<float> regrets(actions.size() * node_player_private_cards.size());
     for (std::size_t i = 0; i < node_player_private_cards.size(); i++) {
         //boolean regrets_all_negative = true;
@@ -867,9 +901,11 @@ void PCfrSolver::actionUtilityInto(int player, const shared_ptr<ActionNode>& nod
             }
         }
     }
+    }
 #endif
 
         if(this->collect_evs && (this->collecting_statics || (iter % this->print_interval == 0))){
+            TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionCollectEvs);
             float oppo_sum = 0;
             vector<float> oppo_card_sum = vector<float> (52);
             fill(oppo_card_sum.begin(),oppo_card_sum.end(),0);

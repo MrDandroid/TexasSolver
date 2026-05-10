@@ -47,6 +47,14 @@ public:
 
     float getCurrentStrategy(int action_id, int private_id) const override;
 
+    void fillReachProbsForAction(int action_id,
+                                 const vector<float>& reach_probs,
+                                 vector<float>& new_reach_probs) const override;
+
+    void accumulateStrategyWeightedActionUtility(int action_id,
+                                                const vector<float>& action_utilities,
+                                                vector<float>& payoffs) const override;
+
     void updateRegrets(const vector<float>& regrets, int iteration_number, const vector<float>& reach_probs) override;
 
     void setEv(const vector<float>& evs) override;

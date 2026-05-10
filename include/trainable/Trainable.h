@@ -23,6 +23,23 @@ public:
     virtual void fillCurrentStrategy(vector<float>& strategy) = 0;
     virtual void fillCurrentStrategyForAction(int action_id, vector<float>& strategy) const = 0;
     virtual float getCurrentStrategy(int action_id, int private_id) const = 0;
+    virtual void fillReachProbsForAction(int action_id,
+                                         const vector<float>& reach_probs,
+                                         vector<float>& new_reach_probs) const {
+        new_reach_probs.resize(reach_probs.size());
+        for (std::size_t private_id = 0; private_id < reach_probs.size(); private_id++) {
+            new_reach_probs[private_id] =
+                    reach_probs[private_id] * getCurrentStrategy(action_id, (int)private_id);
+        }
+    }
+    virtual void accumulateStrategyWeightedActionUtility(int action_id,
+                                                        const vector<float>& action_utilities,
+                                                        vector<float>& payoffs) const {
+        for (std::size_t private_id = 0; private_id < action_utilities.size(); private_id++) {
+            payoffs[private_id] +=
+                    getCurrentStrategy(action_id, (int)private_id) * action_utilities[private_id];
+        }
+    }
     virtual void updateRegrets(const vector<float>& regrets,int iteration_number,const vector<float>& reach_probs) = 0;
     virtual void updateRegretsFromActionUtilities(const vector<vector<float>>& action_utilities,
                                                   const vector<float>& payoffs,

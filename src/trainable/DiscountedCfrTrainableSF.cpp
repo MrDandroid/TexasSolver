@@ -129,6 +129,43 @@ float DiscountedCfrTrainableSF::getCurrentStrategy(int action_id, int private_id
     return 1.0f / this->action_number;
 }
 
+void DiscountedCfrTrainableSF::fillReachProbsForAction(int action_id,
+                                                       const vector<float>& reach_probs,
+                                                       vector<float>& new_reach_probs) const {
+    new_reach_probs.resize(this->card_number);
+    const float uniform_strategy = 1.0f / this->action_number;
+    const int action_offset = action_id * this->card_number;
+    for (int private_id = 0; private_id < this->card_number; private_id++) {
+        float r_plus_sum = 0.0f;
+        for (int one_action_id = 0; one_action_id < action_number; one_action_id++) {
+            int index = one_action_id * this->card_number + private_id;
+            r_plus_sum += max(float(0.0), this->r_plus[index]);
+        }
+        const float strategy_prob = r_plus_sum != 0
+                ? max(float(0.0), this->r_plus[action_offset + private_id]) / r_plus_sum
+                : uniform_strategy;
+        new_reach_probs[private_id] = reach_probs[private_id] * strategy_prob;
+    }
+}
+
+void DiscountedCfrTrainableSF::accumulateStrategyWeightedActionUtility(int action_id,
+                                                                      const vector<float>& action_utilities,
+                                                                      vector<float>& payoffs) const {
+    const float uniform_strategy = 1.0f / this->action_number;
+    const int action_offset = action_id * this->card_number;
+    for (int private_id = 0; private_id < this->card_number; private_id++) {
+        float r_plus_sum = 0.0f;
+        for (int one_action_id = 0; one_action_id < action_number; one_action_id++) {
+            int index = one_action_id * this->card_number + private_id;
+            r_plus_sum += max(float(0.0), this->r_plus[index]);
+        }
+        const float strategy_prob = r_plus_sum != 0
+                ? max(float(0.0), this->r_plus[action_offset + private_id]) / r_plus_sum
+                : uniform_strategy;
+        payoffs[private_id] += strategy_prob * action_utilities[private_id];
+    }
+}
+
 void DiscountedCfrTrainableSF::setEv(const vector<float>& evs){
     if(evs.size() != this->evs.size()) throw runtime_error("size mismatch in discountcfrtrainable setEV");
     for(std::size_t i = 0;i < evs.size();i ++) if(evs[i] == evs[i])this->evs[i] = evs[i];

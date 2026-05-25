@@ -167,6 +167,12 @@ private:
 #endif
 #if TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
     vector<std::array<std::array<vector<pair<int, int>>, 4>, 4>> color_exchange_pairs;
+#if TEXASSOLVER_OPT_CHANCE_DIRECT_COLOR_ACCUM
+    vector<std::array<std::array<vector<int>, 4>, 4>> color_exchange_source_indices;
+#endif
+#endif
+#if TEXASSOLVER_OPT_CHANCE_SCALED_REACH_COPY
+    vector<std::array<vector<int>, 52>> range_indices_by_card;
 #endif
     bool debug;
     int print_interval;

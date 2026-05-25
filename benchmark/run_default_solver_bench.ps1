@@ -16,6 +16,8 @@ param(
     [switch]$DisableActionStrategyFusedLoops,
     [switch]$DisableUpdateRegretsInline,
     [switch]$DisableChanceReachBufferReuse,
+    [switch]$DisableChanceScaledReachCopy,
+    [switch]$DisableChanceDirectColorAccum,
     [switch]$DisableFastCardAccessors,
     [switch]$DisableActionRegretDirectUpdate,
     [switch]$DisableRiverCanonicalRankCache,
@@ -94,6 +96,8 @@ $optActionStrategyBuffer = if ($DisableActionStrategyBuffer) { 0 } else { 1 }
 $optActionStrategyFusedLoops = if ($DisableActionStrategyFusedLoops) { 0 } else { 1 }
 $optUpdateRegretsInline = if ($DisableUpdateRegretsInline) { 0 } else { 1 }
 $optChanceReachBufferReuse = if ($DisableChanceReachBufferReuse) { 0 } else { 1 }
+$optChanceScaledReachCopy = if ($DisableChanceScaledReachCopy) { 0 } else { 1 }
+$optChanceDirectColorAccum = if ($DisableChanceDirectColorAccum) { 0 } else { 1 }
 $optFastCardAccessors = if ($DisableFastCardAccessors) { 0 } else { 1 }
 $optActionRegretDirectUpdate = if ($DisableActionRegretDirectUpdate) { 0 } else { 1 }
 $optRiverCanonicalRankCache = if ($DisableRiverCanonicalRankCache) { 0 } else { 1 }
@@ -114,6 +118,8 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS=$optActionStrategyFusedLoops",
     "TEXASSOLVER_OPT_UPDATE_REGRETS_INLINE=$optUpdateRegretsInline",
     "TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE=$optChanceReachBufferReuse",
+    "TEXASSOLVER_OPT_CHANCE_SCALED_REACH_COPY=$optChanceScaledReachCopy",
+    "TEXASSOLVER_OPT_CHANCE_DIRECT_COLOR_ACCUM=$optChanceDirectColorAccum",
     "TEXASSOLVER_OPT_FAST_CARD_ACCESSORS=$optFastCardAccessors",
     "TEXASSOLVER_OPT_ACTION_REGRET_DIRECT_UPDATE=$optActionRegretDirectUpdate",
     "TEXASSOLVER_OPT_RIVER_CANONICAL_RANK_CACHE=$optRiverCanonicalRankCache",
@@ -159,6 +165,12 @@ if ($DisableUpdateRegretsInline) {
 }
 if ($DisableChanceReachBufferReuse) {
     $buildName += "-no-chance-reach-buffer-reuse"
+}
+if ($DisableChanceScaledReachCopy) {
+    $buildName += "-no-chance-scaled-reach-copy"
+}
+if ($DisableChanceDirectColorAccum) {
+    $buildName += "-no-chance-direct-color-accum"
 }
 if ($DisableFastCardAccessors) {
     $buildName += "-no-fast-card-accessors"
@@ -411,6 +423,8 @@ $summary = [ordered]@{
         action_strategy_fused_loops = [bool]$optActionStrategyFusedLoops
         update_regrets_inline = [bool]$optUpdateRegretsInline
         chance_reach_buffer_reuse = [bool]$optChanceReachBufferReuse
+        chance_scaled_reach_copy = [bool]$optChanceScaledReachCopy
+        chance_direct_color_accum = [bool]$optChanceDirectColorAccum
         fast_card_accessors = [bool]$optFastCardAccessors
         action_regret_direct_update = [bool]$optActionRegretDirectUpdate
         river_canonical_rank_cache = [bool]$optRiverCanonicalRankCache
@@ -523,7 +537,7 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields showdown_loss_from_total=$optShowdownLossFromTotal showdown_tie_epoch=$optShowdownTieEpoch terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer action_strategy_fused_loops=$optActionStrategyFusedLoops update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache river_result_board_cache=$optRiverResultBoardCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields showdown_loss_from_total=$optShowdownLossFromTotal showdown_tie_epoch=$optShowdownTieEpoch terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer action_strategy_fused_loops=$optActionStrategyFusedLoops update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse chance_scaled_reach_copy=$optChanceScaledReachCopy chance_direct_color_accum=$optChanceDirectColorAccum fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache river_result_board_cache=$optRiverResultBoardCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

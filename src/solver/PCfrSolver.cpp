@@ -12,6 +12,7 @@
 #include <cmath>
 #include <iomanip>
 #include <utility>
+#include <algorithm>
 #include <zlib.h>
 #include "include/tools/HotspotProfiler.h"
 #include "include/tools/OptimizationSwitches.h"
@@ -96,6 +97,18 @@ PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, v
     this->ranges = vector<vector<PrivateCards>>(this->player_number);
     this->ranges[0] = range1;
     this->ranges[1] = range2;
+#if TEXASSOLVER_OPT_CHANCE_SCALED_REACH_COPY
+    this->range_indices_by_card.clear();
+    this->range_indices_by_card.resize(this->player_number);
+    for (int range_player = 0; range_player < this->player_number; ++range_player) {
+        const vector<PrivateCards>& range = this->ranges[range_player];
+        for (std::size_t hand_id = 0; hand_id < range.size(); ++hand_id) {
+            const PrivateCards& one_hand = range[hand_id];
+            this->range_indices_by_card[range_player][one_hand.card1].push_back(static_cast<int>(hand_id));
+            this->range_indices_by_card[range_player][one_hand.card2].push_back(static_cast<int>(hand_id));
+        }
+    }
+#endif
 
     this->compairer = compairer;
 
@@ -159,6 +172,10 @@ PCfrSolver::PCfrSolver(shared_ptr<GameTree> tree, vector<PrivateCards> range1, v
 void PCfrSolver::buildColorExchangeCache() {
     this->color_exchange_pairs.clear();
     this->color_exchange_pairs.resize(this->player_number);
+#if TEXASSOLVER_OPT_CHANCE_DIRECT_COLOR_ACCUM
+    this->color_exchange_source_indices.clear();
+    this->color_exchange_source_indices.resize(this->player_number);
+#endif
 
     for (int player = 0; player < this->player_number; ++player) {
         const vector<PrivateCards>& range = this->pcm.getPreflopCards(player);
@@ -166,6 +183,13 @@ void PCfrSolver::buildColorExchangeCache() {
             for (int rank2 = 0; rank2 < 4; ++rank2) {
                 vector<pair<int, int>>& pairs = this->color_exchange_pairs[player][rank1][rank2];
                 pairs.clear();
+#if TEXASSOLVER_OPT_CHANCE_DIRECT_COLOR_ACCUM
+                vector<int>& source_indices = this->color_exchange_source_indices[player][rank1][rank2];
+                source_indices.resize(range.size());
+                for (std::size_t i = 0; i < range.size(); ++i) {
+                    source_indices[i] = static_cast<int>(i);
+                }
+#endif
                 if (rank1 == rank2 || range.empty()) {
                     continue;
                 }
@@ -204,6 +228,11 @@ void PCfrSolver::buildColorExchangeCache() {
                     if(ind != i){
                         self_ind[ind] = -1;
                         pairs.emplace_back(static_cast<int>(i), static_cast<int>(ind));
+#if TEXASSOLVER_OPT_CHANCE_DIRECT_COLOR_ACCUM
+                        int tmp = source_indices[i];
+                        source_indices[i] = source_indices[ind];
+                        source_indices[ind] = tmp;
+#endif
                     }
                 }
             }
@@ -447,21 +476,30 @@ PCfrSolver::chanceUtility(int player, shared_ptr<ChanceNode> node, const vector<
 void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& node, const vector<float> &reach_probs, int iter,
                          uint64_t current_board,int deal, vector<float>& chance_utility) {
     TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrChanceUtility);
-    vector<Card>& cards = this->deck.getCards();
+    const vector<Card>& chance_cards = node->getCards();
+    shared_ptr<GameTreeNode> one_child = node->getChildren();
     //float[] cardWeights = getCardsWeights(player,reach_probs[1 - player],current_board);
 
-    int card_num = node->getCards().size();
+    int card_num = chance_cards.size();
     if(card_num % 4 != 0) throw runtime_error("card num cannot round 4");
     // 可能的发牌情况,2代表每个人的holecard是两张
 #if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
-    int possible_deals = (int)node->getCards().size() - Card::boardLongCardCount(current_board) - 2;
+    int possible_deals = (int)chance_cards.size() - Card::boardLongCardCount(current_board) - 2;
 #else
-    int possible_deals = node->getCards().size() - Card::long2board(current_board).size() - 2;
+    int possible_deals = chance_cards.size() - Card::long2board(current_board).size() - 2;
 #endif
     int oppo = 1 - player;
 
     //vector<float> chance_utility(reach_probs[player].size());
     chance_utility.assign(this->ranges[player].size(), 0.0f);
+
+    struct ValidChanceCard {
+        int card_index;
+        int deck_index;
+        int card_int;
+        uint64_t card_long;
+        int new_deal;
+    };
 
     int random_deal = 0;
     if(this->monteCarolAlg==MonteCarolAlg::PUBLIC) {
@@ -472,9 +510,9 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
             random_deal = this->round_deal[GameTreeNode::gameRound2int(node->getRound())];
         }
     }
-    //vector<vector<vector<float>>> arr_new_reach_probs = vector<vector<vector<float>>>(node->getCards().size());
+    //vector<vector<vector<float>>> arr_new_reach_probs = vector<vector<vector<float>>>(chance_cards.size());
 
-    vector<vector<float>> results(node->getCards().size());
+    vector<vector<float>> results(chance_cards.size());
     //fill(results.begin(),results.end(),nullptr);
 
     vector<float> multiplier;
@@ -488,7 +526,7 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
             for (int i = 0; i < 4; i++) {
                 int i_card = card_base * 4 + i;
                 if (i == cardr) {
-                    Card *one_card = const_cast<Card *>(&(node->getCards()[i_card]));
+                    const Card *one_card = &(chance_cards[i_card]);
 #if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
                     uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
 #else
@@ -499,7 +537,7 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
                         multiplier_num += 1;
                     }
                 } else {
-                    Card *one_card = const_cast<Card *>(&(node->getCards()[i_card]));
+                    const Card *one_card = &(chance_cards[i_card]);
 #if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
                     uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
 #else
@@ -515,22 +553,50 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
         }
     }
 
-    vector<int> valid_cards;
-    valid_cards.reserve(node->getCards().size());
+    vector<ValidChanceCard> valid_cards;
+    valid_cards.reserve(chance_cards.size());
 
-    for(std::size_t card = 0;card < node->getCards().size();card ++) {
-        shared_ptr<GameTreeNode> one_child = node->getChildren();
-        Card *one_card = const_cast<Card *>(&(node->getCards()[card]));
+    for(std::size_t card = 0;card < chance_cards.size();card ++) {
+        const Card *one_card = &(chance_cards[card]);
+        const int card_int = one_card->getCardInt();
 #if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
-        uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
+        uint64_t card_long = Card::boardInt2longUnchecked(card_int);
 #else
-        uint64_t card_long = Card::boardInt2long(one_card->getCardInt());//Card::boardCards2long(new Card[]{one_card});
+        uint64_t card_long = Card::boardInt2long(card_int);//Card::boardCards2long(new Card[]{one_card});
 #endif
         if (Card::boardsHasIntercept(card_long, current_board)) continue;
         if (iter <= this->warmup && multiplier[card] == 0) continue;
-        if (this->color_iso_offset[deal][one_card->getCardInt() % 4] < 0) continue;
-        valid_cards.push_back(card);
+        if (this->color_iso_offset[deal][card_int % 4] < 0) continue;
+
+        int new_deal;
+        if(deal == 0){
+            new_deal = static_cast<int>(card) + 1;
+        } else if (deal > 0 && deal <= card_num){
+            int origin_deal = deal - 1;
+#ifdef DEBUG
+            if(origin_deal == static_cast<int>(card)) throw runtime_error("deal should not be equal");
+#endif
+            new_deal = card_num * origin_deal + static_cast<int>(card);
+            new_deal += (1 + card_num);
+        } else{
+            throw runtime_error(tfm::format("deal out of range : %s ",deal));
+        }
+
+        valid_cards.push_back(ValidChanceCard{
+            static_cast<int>(card),
+            one_card->getNumberInDeckInt(),
+            card_int,
+            card_long,
+            new_deal
+        });
     }
+
+#if TEXASSOLVER_OPT_CHANCE_SCALED_REACH_COPY
+    vector<float> scaled_reach_probs(this->ranges[oppo].size());
+    for (std::size_t hand_id = 0; hand_id < scaled_reach_probs.size(); ++hand_id) {
+        scaled_reach_probs[hand_id] = reach_probs[hand_id] / possible_deals;
+    }
+#endif
 
 #if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
     #pragma omp parallel
@@ -541,15 +607,8 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
     #pragma omp parallel for schedule(static)
 #endif
     for(std::size_t valid_ind = 0;valid_ind < valid_cards.size();valid_ind++) {
-        int card = valid_cards[valid_ind];
-        shared_ptr<GameTreeNode> one_child = node->getChildren();
-        Card *one_card = const_cast<Card *>(&(node->getCards()[card]));
-#if TEXASSOLVER_OPT_FAST_CARD_ACCESSORS
-        uint64_t card_long = Card::boardInt2longUnchecked(one_card->getCardInt());
-#else
-        uint64_t card_long = Card::boardInt2long(one_card->getCardInt());//Card::boardCards2long(new Card[]{one_card});
-#endif
-
+        const ValidChanceCard& valid_card = valid_cards[valid_ind];
+        const uint64_t card_long = valid_card.card_long;
         uint64_t new_board_long = current_board | card_long;
         if (this->monteCarolAlg == MonteCarolAlg::PUBLIC) {
             throw runtime_error("parallel solver don't support public monte carol");
@@ -557,11 +616,13 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
 
         //cout << "Card deal:" << one_card->toString() << endl;
 
+#ifdef DEBUG
         vector<PrivateCards> &playerPrivateCard = (this->ranges[player]);
         vector<PrivateCards> &oppoPrivateCards = (this->ranges[1 - player]);
+#endif
 
 #if !TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
-        vector<float> new_reach_probs = vector<float>(oppoPrivateCards.size());
+        vector<float> new_reach_probs = vector<float>(this->ranges[oppo].size());
 #endif
 
 #ifdef DEBUG
@@ -569,6 +630,13 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
         if (oppoPrivateCards.size() != this->ranges[1 - player].size()) throw runtime_error("length not match");
 #endif
 
+#if TEXASSOLVER_OPT_CHANCE_SCALED_REACH_COPY
+        std::copy(scaled_reach_probs.begin(), scaled_reach_probs.end(), new_reach_probs.begin());
+        const vector<int>& blocked_hand_indices = this->range_indices_by_card[oppo][valid_card.card_int];
+        for (int blocked_hand_index : blocked_hand_indices) {
+            new_reach_probs[blocked_hand_index] = 0.0f;
+        }
+#else
         int player_hand_len = this->ranges[oppo].size();
         for (int player_hand = 0; player_hand < player_hand_len; player_hand++) {
             PrivateCards &one_private = this->ranges[oppo][player_hand];
@@ -579,38 +647,25 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
             }
             new_reach_probs[player_hand] = reach_probs[player_hand] / possible_deals;
         }
+#endif
 #ifdef DEBUG
         if (Card::boardsHasIntercept(current_board, card_long))
             throw runtime_error("board has intercept with dealt card");
 #endif
 
-        int new_deal;
-        if(deal == 0){
-            new_deal = card + 1;
-        } else if (deal > 0 && deal <= card_num){
-            int origin_deal = deal - 1;
-
-#ifdef DEBUG
-            if(origin_deal == card) throw runtime_error("deal should not be equal");
-#endif
-            new_deal = card_num * origin_deal + card;
-            new_deal += (1 + card_num);
-        } else{
-            throw runtime_error(tfm::format("deal out of range : %s ",deal));
-        }
         if(this->distributing_task && node->getRound() == this->split_round) {
-            results[one_card->getNumberInDeckInt()] = vector<float>(this->ranges[player].size());
+            results[valid_card.deck_index] = vector<float>(this->ranges[player].size());
             //TaskParams taskParams = TaskParams();
         }else {
 #if TEXASSOLVER_OPT_CFR_OUT_BUFFER
-            vector<float>& child_utility = results[one_card->getNumberInDeckInt()];
-            this->cfrInto(player, one_child, new_reach_probs, iter, new_board_long, new_deal, child_utility);
+            vector<float>& child_utility = results[valid_card.deck_index];
+            this->cfrInto(player, one_child, new_reach_probs, iter, new_board_long, valid_card.new_deal, child_utility);
 #else
-            vector<float> child_utility = this->cfr(player, one_child, new_reach_probs, iter, new_board_long, new_deal);
+            vector<float> child_utility = this->cfr(player, one_child, new_reach_probs, iter, new_board_long, valid_card.new_deal);
 #if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
-            results[one_card->getNumberInDeckInt()] = std::move(child_utility);
+            results[valid_card.deck_index] = std::move(child_utility);
 #else
-            results[one_card->getNumberInDeckInt()] = child_utility;
+            results[valid_card.deck_index] = child_utility;
 #endif
 #endif
         }
@@ -619,11 +674,59 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
     }
 #endif
 
+#if TEXASSOLVER_OPT_CHANCE_DIRECT_COLOR_ACCUM && TEXASSOLVER_OPT_COLOR_EXCHANGE_CACHE
+    for(std::size_t card = 0;card < chance_cards.size();card ++) {
+        const Card& one_card = chance_cards[card];
+        const int card_int = one_card.getCardInt();
+        const int offset = this->color_iso_offset[deal][card_int % 4];
+        const vector<float>* child_utility_ptr = nullptr;
+        const vector<int>* source_indices = nullptr;
+
+        if(offset < 0) {
+            int rank1 = card_int % 4;
+            int rank2 = rank1 + offset;
+#ifdef DEBUG
+            if(rank2 < 0) throw runtime_error("rank error");
+#endif
+            child_utility_ptr = &results[one_card.getNumberInDeckInt() + offset];
+            source_indices = &this->color_exchange_source_indices[player][rank1][rank2];
+        }else{
+            child_utility_ptr = &results[one_card.getNumberInDeckInt()];
+        }
+
+        const vector<float>& child_utility = *child_utility_ptr;
+        if(child_utility.empty())
+            continue;
+
+#ifdef DEBUG
+        if(child_utility.size() != chance_utility.size()) throw runtime_error("length not match");
+        if(source_indices != nullptr && source_indices->size() != child_utility.size()) throw runtime_error("exchange source size problem");
+#endif
+        if(iter > this->warmup) {
+            if(source_indices == nullptr) {
+                for (std::size_t i = 0; i < child_utility.size(); i++)
+                    chance_utility[i] += child_utility[i];
+            }else{
+                for (std::size_t i = 0; i < child_utility.size(); i++)
+                    chance_utility[i] += child_utility[(*source_indices)[i]];
+            }
+        }else{
+            const float card_multiplier = multiplier[card];
+            if(source_indices == nullptr) {
+                for (std::size_t i = 0; i < child_utility.size(); i++)
+                    chance_utility[i] += child_utility[i] * card_multiplier;
+            }else{
+                for (std::size_t i = 0; i < child_utility.size(); i++)
+                    chance_utility[i] += child_utility[(*source_indices)[i]] * card_multiplier;
+            }
+        }
+    }
+#else
 #if TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
     vector<float> exchanged_child_utility;
 #endif
-    for(std::size_t card = 0;card < node->getCards().size();card ++) {
-        Card *one_card = const_cast<Card *>(&(node->getCards()[card]));
+    for(std::size_t card = 0;card < chance_cards.size();card ++) {
+        const Card *one_card = &(chance_cards[card]);
 #if !TEXASSOLVER_OPT_CHANCE_REACH_BUFFER_REUSE
         vector<float> exchanged_child_utility;
 #endif
@@ -660,6 +763,7 @@ void PCfrSolver::chanceUtilityInto(int player, const shared_ptr<ChanceNode>& nod
                 chance_utility[i] += child_utility[i] * multiplier[card];
         }
     }
+#endif
 
 #ifdef DEBUG
     if(this->monteCarolAlg == MonteCarolAlg::PUBLIC) {

@@ -1011,6 +1011,10 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
     int cached_rank = INT32_MIN;
     float tiesum = 0.0f;
     std::array<float, 52> card_tiesum{};
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+    std::array<int, 52> card_tie_epoch{};
+    int tie_epoch = 0;
+#endif
     int j_tie_end = 0;
 
     int j = 0;
@@ -1037,7 +1041,11 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
         if (cached_rank != one_player_comb.rank) {
             cached_rank = one_player_comb.rank;
             tiesum = 0.0f;
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+            ++tie_epoch;
+#else
             std::fill(card_tiesum.begin(), card_tiesum.end(), 0.0f);
+#endif
             j_tie_end = j;
             while (j_tie_end < (int)oppo_combs.size() && oppo_combs[j_tie_end].rank == cached_rank) {
                 const RiverCombs& one_oppo_comb = oppo_combs[j_tie_end];
@@ -1045,12 +1053,33 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
                 const int oppo_reach_index = one_oppo_comb.reach_prob_index;
                 const float oppo_reach = reach_probs[oppo_reach_index];
                 tiesum += oppo_reach;
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+                if (card_tie_epoch[one_oppo_comb.card1] != tie_epoch) {
+                    card_tie_epoch[one_oppo_comb.card1] = tie_epoch;
+                    card_tiesum[one_oppo_comb.card1] = 0.0f;
+                }
+                if (card_tie_epoch[one_oppo_comb.card2] != tie_epoch) {
+                    card_tie_epoch[one_oppo_comb.card2] = tie_epoch;
+                    card_tiesum[one_oppo_comb.card2] = 0.0f;
+                }
+#endif
                 card_tiesum[one_oppo_comb.card1] += oppo_reach;
                 card_tiesum[one_oppo_comb.card2] += oppo_reach;
 #else
-                tiesum += reach_probs[one_oppo_comb.reach_prob_index];
-                card_tiesum[one_oppo_comb.card1] += reach_probs[one_oppo_comb.reach_prob_index];
-                card_tiesum[one_oppo_comb.card2] += reach_probs[one_oppo_comb.reach_prob_index];
+                const float oppo_reach = reach_probs[one_oppo_comb.reach_prob_index];
+                tiesum += oppo_reach;
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+                if (card_tie_epoch[one_oppo_comb.card1] != tie_epoch) {
+                    card_tie_epoch[one_oppo_comb.card1] = tie_epoch;
+                    card_tiesum[one_oppo_comb.card1] = 0.0f;
+                }
+                if (card_tie_epoch[one_oppo_comb.card2] != tie_epoch) {
+                    card_tie_epoch[one_oppo_comb.card2] = tie_epoch;
+                    card_tiesum[one_oppo_comb.card2] = 0.0f;
+                }
+#endif
+                card_tiesum[one_oppo_comb.card1] += oppo_reach;
+                card_tiesum[one_oppo_comb.card2] += oppo_reach;
 #endif
                 j_tie_end++;
             }
@@ -1060,7 +1089,13 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
         const int c2 = one_player_comb.card2;
 
         const float win_prob = (winsum - card_winsum[c1] - card_winsum[c2]);
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+        const float c1_tiesum = card_tie_epoch[c1] == tie_epoch ? card_tiesum[c1] : 0.0f;
+        const float c2_tiesum = card_tie_epoch[c2] == tie_epoch ? card_tiesum[c2] : 0.0f;
+        const float tie_prob = (tiesum - c1_tiesum - c2_tiesum);
+#else
         const float tie_prob = (tiesum - card_tiesum[c1] - card_tiesum[c2]);
+#endif
 
         payoffs[one_player_comb.reach_prob_index] =
 #if TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL

@@ -10,6 +10,7 @@ param(
     [switch]$DisableLightRiverCombs,
     [switch]$DisableShowdownFastFields,
     [switch]$DisableShowdownLossFromTotal,
+    [switch]$DisableShowdownTieEpoch,
     [switch]$DisableTerminalSameCardCache,
     [switch]$DisableActionStrategyBuffer,
     [switch]$DisableActionStrategyFusedLoops,
@@ -87,6 +88,7 @@ $optimizationLevel = if ($OptimizeO2) { "-O2" } else { "-O3" }
 $optLightRiverCombs = if ($DisableLightRiverCombs) { 0 } else { 1 }
 $optShowdownFastFields = if ($DisableShowdownFastFields) { 0 } else { 1 }
 $optShowdownLossFromTotal = if ($DisableShowdownLossFromTotal) { 0 } else { 1 }
+$optShowdownTieEpoch = if ($DisableShowdownTieEpoch) { 0 } else { 1 }
 $optTerminalSameCardCache = if ($DisableTerminalSameCardCache) { 0 } else { 1 }
 $optActionStrategyBuffer = if ($DisableActionStrategyBuffer) { 0 } else { 1 }
 $optActionStrategyFusedLoops = if ($DisableActionStrategyFusedLoops) { 0 } else { 1 }
@@ -106,6 +108,7 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_LIGHT_RIVER_COMBS=$optLightRiverCombs",
     "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
     "TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL=$optShowdownLossFromTotal",
+    "TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH=$optShowdownTieEpoch",
     "TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE=$optTerminalSameCardCache",
     "TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER=$optActionStrategyBuffer",
     "TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS=$optActionStrategyFusedLoops",
@@ -138,6 +141,9 @@ if ($DisableShowdownFastFields) {
 }
 if ($DisableShowdownLossFromTotal) {
     $buildName += "-no-showdown-loss-from-total"
+}
+if ($DisableShowdownTieEpoch) {
+    $buildName += "-no-showdown-tie-epoch"
 }
 if ($DisableTerminalSameCardCache) {
     $buildName += "-no-terminal-same-card-cache"
@@ -399,6 +405,7 @@ $summary = [ordered]@{
         light_river_combs = [bool]$optLightRiverCombs
         showdown_fast_fields = [bool]$optShowdownFastFields
         showdown_loss_from_total = [bool]$optShowdownLossFromTotal
+        showdown_tie_epoch = [bool]$optShowdownTieEpoch
         terminal_same_card_cache = [bool]$optTerminalSameCardCache
         action_strategy_buffer = [bool]$optActionStrategyBuffer
         action_strategy_fused_loops = [bool]$optActionStrategyFusedLoops
@@ -516,7 +523,7 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields showdown_loss_from_total=$optShowdownLossFromTotal terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer action_strategy_fused_loops=$optActionStrategyFusedLoops update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache river_result_board_cache=$optRiverResultBoardCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields showdown_loss_from_total=$optShowdownLossFromTotal showdown_tie_epoch=$optShowdownTieEpoch terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer action_strategy_fused_loops=$optActionStrategyFusedLoops update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache river_result_board_cache=$optRiverResultBoardCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

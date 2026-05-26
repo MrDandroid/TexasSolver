@@ -39,6 +39,11 @@ GameTreeNode::GameTreeNodeType ActionNode::getType() {
 
 
 shared_ptr<Trainable> ActionNode::getTrainable(int i,bool create_on_site, int use_halffloats) {
+    (void)this->getTrainablePtr(i, create_on_site, use_halffloats);
+    return this->trainables[i];
+}
+
+Trainable* ActionNode::getTrainablePtr(int i,bool create_on_site, int use_halffloats) {
     // 原来是: if(i > this->trainables.size())
     // 这会让 i == size 时不抛异常但直接越界访问 -> UB
     if(i < 0 || i >= (int)this->trainables.size()){
@@ -57,7 +62,7 @@ shared_ptr<Trainable> ActionNode::getTrainable(int i,bool create_on_site, int us
             break;
         }
     }
-    return this->trainables[i];
+    return this->trainables[i].get();
 }
 
 int ActionNode::getTrainablesSize() const {

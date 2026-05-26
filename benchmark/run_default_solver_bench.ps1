@@ -11,6 +11,7 @@ param(
     [switch]$DisableShowdownFastFields,
     [switch]$DisableShowdownLossFromTotal,
     [switch]$DisableShowdownTieEpoch,
+    [switch]$EnableShowdownComboView,
     [switch]$DisableTerminalSameCardCache,
     [switch]$DisableActionStrategyBuffer,
     [switch]$DisableActionStrategyFusedLoops,
@@ -20,6 +21,8 @@ param(
     [switch]$DisableChanceDirectColorAccum,
     [switch]$DisableFastCardAccessors,
     [switch]$DisableActionRegretDirectUpdate,
+    [switch]$DisableActionTrainableRawPtr,
+    [switch]$DisableActionNodeFastAccess,
     [switch]$DisableRiverCanonicalRankCache,
     [switch]$DisableRiverLazyCache,
     [switch]$DisableRiverResultCache,
@@ -91,6 +94,7 @@ $optLightRiverCombs = if ($DisableLightRiverCombs) { 0 } else { 1 }
 $optShowdownFastFields = if ($DisableShowdownFastFields) { 0 } else { 1 }
 $optShowdownLossFromTotal = if ($DisableShowdownLossFromTotal) { 0 } else { 1 }
 $optShowdownTieEpoch = if ($DisableShowdownTieEpoch) { 0 } else { 1 }
+$optShowdownComboView = if ($EnableShowdownComboView) { 1 } else { 0 }
 $optTerminalSameCardCache = if ($DisableTerminalSameCardCache) { 0 } else { 1 }
 $optActionStrategyBuffer = if ($DisableActionStrategyBuffer) { 0 } else { 1 }
 $optActionStrategyFusedLoops = if ($DisableActionStrategyFusedLoops) { 0 } else { 1 }
@@ -100,6 +104,8 @@ $optChanceScaledReachCopy = if ($DisableChanceScaledReachCopy) { 0 } else { 1 }
 $optChanceDirectColorAccum = if ($DisableChanceDirectColorAccum) { 0 } else { 1 }
 $optFastCardAccessors = if ($DisableFastCardAccessors) { 0 } else { 1 }
 $optActionRegretDirectUpdate = if ($DisableActionRegretDirectUpdate) { 0 } else { 1 }
+$optActionTrainableRawPtr = if ($DisableActionTrainableRawPtr) { 0 } else { 1 }
+$optActionNodeFastAccess = if ($DisableActionNodeFastAccess) { 0 } else { 1 }
 $optRiverCanonicalRankCache = if ($DisableRiverCanonicalRankCache) { 0 } else { 1 }
 $optRiverLazyCache = if ($DisableRiverLazyCache) { 0 } else { 1 }
 $optRiverResultCache = if ($DisableRiverResultCache) { 0 } else { 1 }
@@ -113,6 +119,7 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_SHOWDOWN_FAST_FIELDS=$optShowdownFastFields",
     "TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL=$optShowdownLossFromTotal",
     "TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH=$optShowdownTieEpoch",
+    "TEXASSOLVER_OPT_SHOWDOWN_COMBO_VIEW=$optShowdownComboView",
     "TEXASSOLVER_OPT_TERMINAL_SAME_CARD_CACHE=$optTerminalSameCardCache",
     "TEXASSOLVER_OPT_ACTION_STRATEGY_BUFFER=$optActionStrategyBuffer",
     "TEXASSOLVER_OPT_ACTION_STRATEGY_FUSED_LOOPS=$optActionStrategyFusedLoops",
@@ -122,6 +129,8 @@ $optimizationDefines = @(
     "TEXASSOLVER_OPT_CHANCE_DIRECT_COLOR_ACCUM=$optChanceDirectColorAccum",
     "TEXASSOLVER_OPT_FAST_CARD_ACCESSORS=$optFastCardAccessors",
     "TEXASSOLVER_OPT_ACTION_REGRET_DIRECT_UPDATE=$optActionRegretDirectUpdate",
+    "TEXASSOLVER_OPT_ACTION_TRAINABLE_RAW_PTR=$optActionTrainableRawPtr",
+    "TEXASSOLVER_OPT_ACTION_NODE_FAST_ACCESS=$optActionNodeFastAccess",
     "TEXASSOLVER_OPT_RIVER_CANONICAL_RANK_CACHE=$optRiverCanonicalRankCache",
     "TEXASSOLVER_OPT_RIVER_LAZY_CACHE=$optRiverLazyCache",
     "TEXASSOLVER_OPT_RIVER_RESULT_CACHE=$optRiverResultCache",
@@ -151,6 +160,9 @@ if ($DisableShowdownLossFromTotal) {
 if ($DisableShowdownTieEpoch) {
     $buildName += "-no-showdown-tie-epoch"
 }
+if ($EnableShowdownComboView) {
+    $buildName += "-showdown-combo-view"
+}
 if ($DisableTerminalSameCardCache) {
     $buildName += "-no-terminal-same-card-cache"
 }
@@ -177,6 +189,12 @@ if ($DisableFastCardAccessors) {
 }
 if ($DisableActionRegretDirectUpdate) {
     $buildName += "-no-action-regret-direct-update"
+}
+if ($DisableActionTrainableRawPtr) {
+    $buildName += "-no-action-trainable-raw-ptr"
+}
+if ($DisableActionNodeFastAccess) {
+    $buildName += "-no-action-node-fast-access"
 }
 if ($DisableRiverCanonicalRankCache) {
     $buildName += "-no-river-canonical-rank-cache"
@@ -418,6 +436,7 @@ $summary = [ordered]@{
         showdown_fast_fields = [bool]$optShowdownFastFields
         showdown_loss_from_total = [bool]$optShowdownLossFromTotal
         showdown_tie_epoch = [bool]$optShowdownTieEpoch
+        showdown_combo_view = [bool]$optShowdownComboView
         terminal_same_card_cache = [bool]$optTerminalSameCardCache
         action_strategy_buffer = [bool]$optActionStrategyBuffer
         action_strategy_fused_loops = [bool]$optActionStrategyFusedLoops
@@ -427,6 +446,8 @@ $summary = [ordered]@{
         chance_direct_color_accum = [bool]$optChanceDirectColorAccum
         fast_card_accessors = [bool]$optFastCardAccessors
         action_regret_direct_update = [bool]$optActionRegretDirectUpdate
+        action_trainable_raw_ptr = [bool]$optActionTrainableRawPtr
+        action_node_fast_access = [bool]$optActionNodeFastAccess
         river_canonical_rank_cache = [bool]$optRiverCanonicalRankCache
         river_lazy_cache = [bool]$optRiverLazyCache
         river_result_cache = [bool]$optRiverResultCache
@@ -537,7 +558,7 @@ if ($ProfileHotspots) {
 Write-Host "BENCH_BASELINE $baselineJson"
 Write-Host "BENCH_COMPARE $($comparison.status)"
 Write-Host "BENCH_COMPILER_OPT $optimizationLevel"
-Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields showdown_loss_from_total=$optShowdownLossFromTotal showdown_tie_epoch=$optShowdownTieEpoch terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer action_strategy_fused_loops=$optActionStrategyFusedLoops update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse chance_scaled_reach_copy=$optChanceScaledReachCopy chance_direct_color_accum=$optChanceDirectColorAccum fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache river_result_board_cache=$optRiverResultBoardCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
+Write-Host "BENCH_OPT_SWITCHES light_river_combs=$optLightRiverCombs showdown_fast_fields=$optShowdownFastFields showdown_loss_from_total=$optShowdownLossFromTotal showdown_tie_epoch=$optShowdownTieEpoch showdown_combo_view=$optShowdownComboView terminal_same_card_cache=$optTerminalSameCardCache action_strategy_buffer=$optActionStrategyBuffer action_strategy_fused_loops=$optActionStrategyFusedLoops update_regrets_inline=$optUpdateRegretsInline chance_reach_buffer_reuse=$optChanceReachBufferReuse chance_scaled_reach_copy=$optChanceScaledReachCopy chance_direct_color_accum=$optChanceDirectColorAccum fast_card_accessors=$optFastCardAccessors action_regret_direct_update=$optActionRegretDirectUpdate action_trainable_raw_ptr=$optActionTrainableRawPtr action_node_fast_access=$optActionNodeFastAccess river_canonical_rank_cache=$optRiverCanonicalRankCache river_lazy_cache=$optRiverLazyCache river_result_cache=$optRiverResultCache river_result_board_cache=$optRiverResultBoardCache cfr_out_buffer=$optCfrOutBuffer static_node_cast=$optStaticNodeCast exchange_color_const_range=$optExchangeColorConstRange color_exchange_cache=$optColorExchangeCache"
 Write-Host "BENCH_SOLVE_MS $($timing.solve_ms)"
 Write-Host "BENCH_EXPORT_BIN_MS $($timing.export_bin_ms)"
 Write-Host "BENCH_FINAL_ITER $($summary.final_iteration)"

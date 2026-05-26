@@ -788,13 +788,33 @@ void PCfrSolver::actionUtilityInto(int player, const shared_ptr<ActionNode>& nod
                          uint64_t current_board,int deal, vector<float>& payoffs) {
     TEXASSOLVER_HOTSPOT_SCOPE(HotspotId::PcfrActionUtility);
     int oppo = 1 - player;
-    const vector<PrivateCards>& node_player_private_cards = this->ranges[node->getPlayer()];
+    int node_player =
+#if TEXASSOLVER_OPT_ACTION_NODE_FAST_ACCESS
+        node->getPlayerFast();
+#else
+        node->getPlayer();
+#endif
+    const vector<PrivateCards>& node_player_private_cards = this->ranges[node_player];
 
     payoffs.assign(this->ranges[player].size(), 0.0f);
-    vector<shared_ptr<GameTreeNode>>& children =  node->getChildrens();
-    vector<GameActions>& actions =  node->getActions();
+    vector<shared_ptr<GameTreeNode>>& children =
+#if TEXASSOLVER_OPT_ACTION_NODE_FAST_ACCESS
+        node->getChildrensFast();
+#else
+        node->getChildrens();
+#endif
+    vector<GameActions>& actions =
+#if TEXASSOLVER_OPT_ACTION_NODE_FAST_ACCESS
+        node->getActionsFast();
+#else
+        node->getActions();
+#endif
 
+#if TEXASSOLVER_OPT_ACTION_TRAINABLE_RAW_PTR
+    Trainable* trainable = nullptr;
+#else
     shared_ptr<Trainable> trainable;
+#endif
 
     /*
     if(iter <= this->warmup){
@@ -804,15 +824,18 @@ void PCfrSolver::actionUtilityInto(int player, const shared_ptr<ActionNode>& nod
         trainable = node->getTrainable(deal);
     }
      */
-    trainable = node->getTrainable(deal,true,this->use_halffloats);
+    trainable =
+#if TEXASSOLVER_OPT_ACTION_TRAINABLE_RAW_PTR
+        node->getTrainablePtr(deal,true,this->use_halffloats);
+#else
+        node->getTrainable(deal,true,this->use_halffloats);
+#endif
 
 #ifdef DEBUG
     if(trainable == nullptr){
         throw runtime_error("null trainable");
     }
 #endif
-
-    int node_player = node->getPlayer();
 
     if (node_player != player) {
         vector<float> new_reach_prob(reach_probs.size());
@@ -1084,6 +1107,132 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
     const vector<PrivateCards>& player_private_cards = this->ranges[player];
     const vector<PrivateCards>& oppo_private_cards   = this->ranges[oppo];
 
+#if TEXASSOLVER_OPT_SHOWDOWN_COMBO_VIEW
+    const RiverRangeManager::RiverComboView& player_combs = this->rrm.getRiverComboView(player, player_private_cards, current_board);
+    const RiverRangeManager::RiverComboView& oppo_combs   = this->rrm.getRiverComboView(oppo, oppo_private_cards, current_board);
+
+    const int player_combo_count = static_cast<int>(player_combs.rank.size());
+    const int oppo_combo_count = static_cast<int>(oppo_combs.rank.size());
+    const int* player_rank = player_combs.rank.data();
+    const int* player_reach_index = player_combs.reach_prob_index.data();
+    const int* player_card1 = player_combs.card1.data();
+    const int* player_card2 = player_combs.card2.data();
+    const int* oppo_rank = oppo_combs.rank.data();
+    const int* oppo_reach_index = oppo_combs.reach_prob_index.data();
+    const int* oppo_card1 = oppo_combs.card1.data();
+    const int* oppo_card2 = oppo_combs.card2.data();
+    const int* oppo_equal_rank_end = oppo_combs.equal_rank_end.data();
+
+    payoffs.assign(player_private_cards.size(), 0.0f);
+
+    float winsum = 0.0f;
+    std::array<float, 52> card_winsum{};
+
+#if TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL
+    float oppo_total_sum = 0.0f;
+    std::array<float, 52> oppo_total_card_sum{};
+    for (int i = 0; i < oppo_combo_count; ++i) {
+        const float oppo_reach = reach_probs[oppo_reach_index[i]];
+        oppo_total_sum += oppo_reach;
+        oppo_total_card_sum[oppo_card1[i]] += oppo_reach;
+        oppo_total_card_sum[oppo_card2[i]] += oppo_reach;
+    }
+#endif
+
+    int cached_rank = INT32_MIN;
+    float tiesum = 0.0f;
+    std::array<float, 52> card_tiesum{};
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+    std::array<int, 52> card_tie_epoch{};
+    int tie_epoch = 0;
+#endif
+
+    int j = 0;
+    for (int i = 0; i < player_combo_count; ++i) {
+        const int one_player_rank = player_rank[i];
+
+        while (j < oppo_combo_count && one_player_rank < oppo_rank[j]) {
+            const float oppo_reach = reach_probs[oppo_reach_index[j]];
+            winsum += oppo_reach;
+            card_winsum[oppo_card1[j]] += oppo_reach;
+            card_winsum[oppo_card2[j]] += oppo_reach;
+            ++j;
+        }
+
+        if (cached_rank != one_player_rank) {
+            cached_rank = one_player_rank;
+            tiesum = 0.0f;
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+            ++tie_epoch;
+#else
+            std::fill(card_tiesum.begin(), card_tiesum.end(), 0.0f);
+#endif
+            if (j < oppo_combo_count && oppo_rank[j] == cached_rank) {
+                const int tie_end = oppo_equal_rank_end[j];
+                for (int tie_ind = j; tie_ind < tie_end; ++tie_ind) {
+                    const float oppo_reach = reach_probs[oppo_reach_index[tie_ind]];
+                    tiesum += oppo_reach;
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+                    if (card_tie_epoch[oppo_card1[tie_ind]] != tie_epoch) {
+                        card_tie_epoch[oppo_card1[tie_ind]] = tie_epoch;
+                        card_tiesum[oppo_card1[tie_ind]] = 0.0f;
+                    }
+                    if (card_tie_epoch[oppo_card2[tie_ind]] != tie_epoch) {
+                        card_tie_epoch[oppo_card2[tie_ind]] = tie_epoch;
+                        card_tiesum[oppo_card2[tie_ind]] = 0.0f;
+                    }
+#endif
+                    card_tiesum[oppo_card1[tie_ind]] += oppo_reach;
+                    card_tiesum[oppo_card2[tie_ind]] += oppo_reach;
+                }
+            }
+        }
+
+        const int c1 = player_card1[i];
+        const int c2 = player_card2[i];
+
+        const float win_prob = (winsum - card_winsum[c1] - card_winsum[c2]);
+#if TEXASSOLVER_OPT_SHOWDOWN_TIE_EPOCH
+        const float c1_tiesum = card_tie_epoch[c1] == tie_epoch ? card_tiesum[c1] : 0.0f;
+        const float c2_tiesum = card_tie_epoch[c2] == tie_epoch ? card_tiesum[c2] : 0.0f;
+        const float tie_prob = (tiesum - c1_tiesum - c2_tiesum);
+#else
+        const float tie_prob = (tiesum - card_tiesum[c1] - card_tiesum[c2]);
+#endif
+
+        payoffs[player_reach_index[i]] =
+#if TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL
+            win_prob * win_payoff_adj
+            + tie_prob * tie_payoff_adj
+            + (oppo_total_sum - oppo_total_card_sum[c1] - oppo_total_card_sum[c2] - win_prob - tie_prob) * lose_payoff;
+#else
+            win_prob * win_payoff_adj
+            + tie_prob * tie_payoff_adj;
+#endif
+    }
+
+#if !TEXASSOLVER_OPT_SHOWDOWN_LOSS_FROM_TOTAL
+    float losssum = 0.0f;
+    std::array<float, 52>& card_losssum = card_winsum;
+    std::fill(card_losssum.begin(), card_losssum.end(), 0.0f);
+
+    j = oppo_combo_count - 1;
+    for (int i = player_combo_count - 1; i >= 0; --i) {
+        while (j >= 0 && player_rank[i] > oppo_rank[j]) {
+            const float oppo_reach = reach_probs[oppo_reach_index[j]];
+            losssum += oppo_reach;
+            card_losssum[oppo_card1[j]] += oppo_reach;
+            card_losssum[oppo_card2[j]] += oppo_reach;
+            --j;
+        }
+        payoffs[player_reach_index[i]] += (losssum
+                                           - card_losssum[player_card1[i]]
+                                           - card_losssum[player_card2[i]]) * lose_payoff;
+    }
+#endif
+
+    return;
+#else
     const vector<RiverCombs>& player_combs = this->rrm.getRiverCombos(player,player_private_cards,current_board);
     const vector<RiverCombs>& oppo_combs   = this->rrm.getRiverCombos(oppo,oppo_private_cards,current_board);
 
@@ -1244,6 +1393,7 @@ void PCfrSolver::showdownUtilityInto(int player, const shared_ptr<ShowdownNode>&
 #endif
 
     return;
+#endif
 }
 
 

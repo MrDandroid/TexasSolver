@@ -15,10 +15,21 @@
 
 class RiverRangeManager {
 public:
+    struct RiverComboView {
+        vector<int> rank;
+        vector<int> reach_prob_index;
+        vector<int> card1;
+        vector<int> card2;
+        vector<int> equal_rank_end;
+    };
+
     RiverRangeManager();
     RiverRangeManager(shared_ptr<Compairer> handEvaluator);
     const vector<RiverCombs>& getRiverCombos(int player, const vector<PrivateCards>& riverCombos, const vector<int>& board);
     const vector<RiverCombs>& getRiverCombos(int player, const vector<PrivateCards>& riverCombos, uint64_t board_long);
+#if TEXASSOLVER_OPT_SHOWDOWN_COMBO_VIEW
+    const RiverComboView& getRiverComboView(int player, const vector<PrivateCards>& riverCombos, uint64_t board_long);
+#endif
     void preloadRiverCombos(const vector<PrivateCards>& player0Combos,
                             const vector<PrivateCards>& player1Combos,
                             const vector<Card>& deckCards,
@@ -31,6 +42,10 @@ private:
 
     unordered_map<uint64_t , vector<RiverCombs>> p1RiverRanges;
     unordered_map<uint64_t , vector<RiverCombs>> p2RiverRanges;
+#if TEXASSOLVER_OPT_SHOWDOWN_COMBO_VIEW
+    unordered_map<uint64_t, RiverComboView> p1RiverViews;
+    unordered_map<uint64_t, RiverComboView> p2RiverViews;
+#endif
 #if TEXASSOLVER_OPT_RIVER_CANONICAL_RANK_CACHE
     unordered_map<uint64_t, vector<int>> canonicalRankCache;
 #endif

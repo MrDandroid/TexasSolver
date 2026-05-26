@@ -189,6 +189,63 @@ RiverRangeManager::getRiverCombos(int player, const vector<PrivateCards> &preflo
     return inserted.first->second;
 }
 
+#if TEXASSOLVER_OPT_SHOWDOWN_COMBO_VIEW
+const RiverRangeManager::RiverComboView&
+RiverRangeManager::getRiverComboView(int player, const vector<PrivateCards>& preflopCombos, uint64_t board_long) {
+    unordered_map<uint64_t, RiverComboView>* riverViews;
+
+    if (player == 0)
+        riverViews = &p1RiverViews;
+    else if (player == 1)
+        riverViews = &p2RiverViews;
+    else
+        throw runtime_error(tfm::format("player %s not found", player));
+
+    {
+        std::lock_guard<std::mutex> lock(*this->maplock);
+        auto found = riverViews->find(board_long);
+        if (found != riverViews->end()) {
+            return found->second;
+        }
+    }
+
+    const vector<RiverCombs>& combos = this->getRiverCombos(player, preflopCombos, board_long);
+    RiverComboView view;
+    const std::size_t combo_count = combos.size();
+    view.rank.resize(combo_count);
+    view.reach_prob_index.resize(combo_count);
+    view.card1.resize(combo_count);
+    view.card2.resize(combo_count);
+    view.equal_rank_end.resize(combo_count);
+
+    for (std::size_t i = 0; i < combo_count; ++i) {
+        const RiverCombs& combo = combos[i];
+        view.rank[i] = combo.rank;
+        view.reach_prob_index[i] = combo.reach_prob_index;
+        view.card1[i] = combo.card1;
+        view.card2[i] = combo.card2;
+    }
+
+    std::size_t group_begin = 0;
+    while (group_begin < combo_count) {
+        std::size_t group_end = group_begin + 1;
+        const int group_rank = view.rank[group_begin];
+        while (group_end < combo_count && view.rank[group_end] == group_rank) {
+            ++group_end;
+        }
+        const int group_end_int = static_cast<int>(group_end);
+        for (std::size_t i = group_begin; i < group_end; ++i) {
+            view.equal_rank_end[i] = group_end_int;
+        }
+        group_begin = group_end;
+    }
+
+    std::lock_guard<std::mutex> lock(*this->maplock);
+    auto inserted = riverViews->emplace(board_long, std::move(view));
+    return inserted.first->second;
+}
+#endif
+
 void RiverRangeManager::preloadRiverCombos(const vector<PrivateCards>& player0Combos,
                                            const vector<PrivateCards>& player1Combos,
                                            const vector<Card>& deckCards,

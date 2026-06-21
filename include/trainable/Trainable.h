@@ -8,6 +8,7 @@
 #include <memory>
 #include <vector>
 #include "include/json.hpp"
+#include "include/tools/OptimizationSwitches.h"
 using namespace std;
 using json = nlohmann::json;
 
@@ -26,7 +27,13 @@ public:
     virtual void fillReachProbsForAction(int action_id,
                                          const vector<float>& reach_probs,
                                          vector<float>& new_reach_probs) const {
+#if TEXASSOLVER_OPT_ACTION_REACH_RESIZE_GUARD
+        if (new_reach_probs.size() != reach_probs.size()) {
+            new_reach_probs.resize(reach_probs.size());
+        }
+#else
         new_reach_probs.resize(reach_probs.size());
+#endif
         for (std::size_t private_id = 0; private_id < reach_probs.size(); private_id++) {
             new_reach_probs[private_id] =
                     reach_probs[private_id] * getCurrentStrategy(action_id, (int)private_id);

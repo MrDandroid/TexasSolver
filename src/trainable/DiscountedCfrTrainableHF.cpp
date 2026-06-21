@@ -142,7 +142,13 @@ float DiscountedCfrTrainableHF::getCurrentStrategy(int action_id, int private_id
 void DiscountedCfrTrainableHF::fillReachProbsForAction(int action_id,
                                                        const vector<float>& reach_probs,
                                                        vector<float>& new_reach_probs) const {
+#if TEXASSOLVER_OPT_ACTION_REACH_RESIZE_GUARD
+    if (new_reach_probs.size() != static_cast<std::size_t>(this->card_number)) {
+        new_reach_probs.resize(this->card_number);
+    }
+#else
     new_reach_probs.resize(this->card_number);
+#endif
     const float uniform_strategy = 1.0f / this->action_number;
     const int action_offset = action_id * this->card_number;
     for (int private_id = 0; private_id < this->card_number; private_id++) {
